@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #######################################
-# set variables below to create the config files, all files will create at ./config directory
+#  set variables below to create the config files, all files will create at ./config directory
 #######################################
 
 # master keepalived virtual ip address
@@ -14,7 +14,7 @@ export K8SHA_IP1=192.168.2.100
 export K8SHA_IP2=192.168.2.101
 
 # node02 ip address
-export K8SHA_IP2=192.168.2.102
+export K8SHA_IP3=192.168.2.102
 
 # master keepalived virtual ip hostname
 export K8SHA_VHOST=k8s-master-lb
@@ -26,16 +26,16 @@ export K8SHA_HOST1=k8s-master01
 export K8SHA_HOST2=k8s-node01
 
 # node02 hostname
-export K8SHA_HOST2=k8s-node02
+export K8SHA_HOST3=k8s-node02
 
 # master01 network interface name
-export K8SHA_NETINF1=nm-bond
+export K8SHA_NETINF1=ens160
 
 # master02 network interface name
-export K8SHA_NETINF2=nm-bond
+export K8SHA_NETINF2=ens160
 
 # master03 network interface name
-export K8SHA_NETINF3=nm-bond
+export K8SHA_NETINF3=ens160
 
 # keepalived auth_pass config
 export K8SHA_KEEPALIVED_AUTH=412f7dc3bfed32194d1600c483e10ad1d
@@ -59,7 +59,7 @@ mkdir -p config/$K8SHA_HOST3/{keepalived,nginx-lb}
 cat << EOF > config/$K8SHA_HOST1/kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1alpha2
 kind: MasterConfiguration
-kubernetesVersion: v1.11.1
+kubernetesVersion: v1.12.3
 apiServerCertSANs:
 - ${K8SHA_HOST1}
 - ${K8SHA_HOST2}
@@ -91,7 +91,7 @@ EOF
 cat << EOF > config/$K8SHA_HOST2/kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1alpha2
 kind: MasterConfiguration
-kubernetesVersion: v1.11.1
+kubernetesVersion: v1.12.3
 apiServerCertSANs:
 - ${K8SHA_HOST1}
 - ${K8SHA_HOST2}
@@ -124,7 +124,7 @@ EOF
 cat << EOF > config/$K8SHA_HOST3/kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1alpha2
 kind: MasterConfiguration
-kubernetesVersion: v1.11.1
+kubernetesVersion: v1.12.3
 apiServerCertSANs:
 - ${K8SHA_HOST1}
 - ${K8SHA_HOST2}
