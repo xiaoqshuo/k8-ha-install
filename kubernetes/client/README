@@ -1,0 +1,3 @@
+Client binaries are no longer included in the Kubernetes final tarball.
+
+Run cluster/get-kube-binaries.sh to download client and server binaries.
