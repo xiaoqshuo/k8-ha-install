@@ -1,9 +1,9 @@
 ```
 
-  安装过程请:https://www.cnblogs.com/dukuan/p/9856269.html
+  安装过程请:https://www.cnblogs.com/xiaoqshuo/p/10069609.html
   
 ```
-# kubeadm-highavailiability - kubernetes high availiability deployment based on kubeadm, for Kubernetes version v1.11.x/v1.9.x/v1.7.x/v1.6.x
+# kubeadm-highavailiability - kubernetes high availiability deployment based on kubeadm, for Kubernetes version v.1.12.3 v1.11.x/v1.9.x/v1.7.x/v1.6.x
 
 ![k8s logo](images/Kubernetes.png)
 
