@@ -1,7 +1,12 @@
 ```
 
   安装过程请:https://www.cnblogs.com/xiaoqshuo/p/10069609.html
-
+  参考：
+      https://github.com/dotbalo/k8s-ha-install
+      https://www.cnblogs.com/dukuan/p/9856269.html
+      https://kubernetes.io/docs/setup/independent/high-availability/
+      https://github.com/cookeem/kubeadm-ha/blob/master/README_CN.md
+      https://blog.csdn.net/ygqygq2/article/details/81333400
 ```
 
 # kubeadm-highavailiability - 基于kubeadm的kubernetes高可用集群部署，支持v1.11.x v1.9.x v1.7.x v1.6.x版本
