@@ -1,6 +1,6 @@
 ```
 
-  安装过程请:https://www.cnblogs.com/dukuan/p/9856269.html
+  安装过程请:https://www.cnblogs.com/xiaoqshuo/p/10069609.html
 
 ```
 
