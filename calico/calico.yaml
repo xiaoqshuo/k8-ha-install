@@ -1,0 +1,365 @@
+# Calico Version v3.1.4
+# https://docs.projectcalico.org/v3.1/releases#v3.1.4
+# This manifest includes the following component versions:
+#   calico/node:v3.1.4
+#   calico/cni:v3.1.4
+#   calico/kube-controllers:v3.1.4
+
+# This ConfigMap is used to configure a self-hosted Calico installation.
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: calico-config
+  namespace: kube-system
+data:
+  # Configure this with the location of your etcd cluster.
+  etcd_endpoints: "https://192.168.2.101:2379,https://192.168.2.102:2379,https://192.168.2.103:2379"
+
+  # Configure the Calico backend to use.
+  calico_backend: "bird"
+
+  # The CNI network configuration to install on each node.
+  cni_network_config: |-
+    {
+      "name": "k8s-pod-network",
+      "cniVersion": "0.3.0",
+      "plugins": [
+        {
+          "type": "calico",
+          "etcd_endpoints": "https://192.168.2.101:2379,https://192.168.2.102:2379,https://192.168.2.103:2379",
+          "etcd_key_file": "/etc/kubernetes/etcd/ssl/etcd-key.pem",
+          "etcd_cert_file": "/etc/kubernetes/etcd/ssl/etcd.pem",
+          "etcd_ca_cert_file": "/etc/kubernetes/etcd/ssl/ca.pem",
+          "log_level": "info",
+          "mtu": 1500,
+          "ipam": {
+              "type": "calico-ipam"
+          },
+          "policy": {
+              "type": "k8s"
+          },
+          "kubernetes": {
+              "kubeconfig": "/etc/cni/net.d/calico-kubeconfig"
+          }
+        },
+        {
+          "type": "portmap",
+          "snat": true,
+          "capabilities": {"portMappings": true}
+        }
+      ]
+    }
+
+  # If you're using TLS enabled etcd uncomment the following.
+  # You must also populate the Secret below with these files.
+  etcd_ca: "/calico-secrets/etcd-ca"
+  etcd_cert: "/calico-secrets/etcd-cert"
+  etcd_key: "/calico-secrets/etcd-key"
+
+---
+
+# The following contains k8s Secrets for use with a TLS enabled etcd cluster.
+# For information on populating Secrets, see http://kubernetes.io/docs/user-guide/secrets/
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: calico-etcd-secrets
+  namespace: kube-system
+data:
+  # Populate the following files with etcd TLS configuration if desired, but leave blank if
+  # not using TLS for etcd.
+  # This self-hosted install expects three files with the following names.  The values
+  # should be base64 encoded strings of the entire contents of each file.
+  etcd-key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NBUUVBMDdvL2pxWEh5K3B4Vk5zcUltN0RnY3ViaVhqMVJ3UDNQQWF3OFhkWmc0ZlpBaWZYClR6aDFWMEJIMm5hZjhNZHpRbXZrV0F1NDBNSzY0MzJRdThUcU1FVHNZb2hBeFdQY1UrK29yK2lySnZ6Wk5IOXMKdSszc1BNZTVJb0p1NDFwRTdCaEtxNlczRG5LcVA0emYwWWFzQUVkaXVobHVtNnQxRmV1T0grUExSM1hDd2ZtTApiUjh3dDJWbmVwdzIwc1lkOG1lbFdOQTBjUFJDTmpQSUZ0TlVIWFpJMXhnQmZtS0RNVW9jdVE4SXBjV2ZPYkxtCmFCTEkvSkxkbDRScUx4eGhHOTJIanMreUJZbkVvNXprR3VtcnVSRlJubnhiZXdWRldySjMxZ3dFeG5YMSsyYkEKOTI0VGNMOHdWaDlYVTJ0dDNLM1J5R2Z1ZTE4bEpzcXdqS3lyYlFJREFRQUJBb0lCQUU5ZnZsNEM1bUVhOWZ2Qwo0Z3ZnakdqSFpQcm5uc1JOeDB6NGtUTWs5Q2pzTDcyd0kvYXVDc2QzOExnRXlyY2dmcVJEQUdyRmtqYXBHaGtZCnhMNnY5cis3eHdhMVg5cmdNZ1JCajNMSy9nYnl1WmNGd2tTOTBGZUU1SEg4aGdlem1xMEwra3BaS01SQTFuUlcKb3IzUkNBQmV3ck5UdjNTYWxaMXZIbXYwSVF3YmVhV2RPZFVta3pFUUFMakZ1YzBETG04MFp0WkVBY1lYZ1RyVgpYUjBuNHBNYkJYWE9MQ21FVkNNYXpZcUdCWHA3QUwwMXQxQ25DaWpXWWdVVmZxOWxlajhJRi84ZVNaaFBHN0RyClkrdEZZK2VqenhTTWdvb2RVZTNIQW5YeG9IY0p5NjIrRTlrTlNXaW9QOCsvdHpaV1QvNmRMSGJuSjMvMXNWN2UKbi8zei9EMENnWUVBK3huSlNzd1dtWWc1c0p6UHNNM2RFVjE1SEI3ZldQMFN3czZoWVp0alVqY05sSmVPYnEzZwowRE1YVlRmeVJ0aFU4eURQZUZiREJQNGlncFZnZXlEanhmSTFGMGIvbTVuR09Ednhzd1F3QWthbFVEbm1WdGF5CkwvNThwUHRzN2FtYy9EaEZKSnpUdXBaRzJXdHJuQzVWT2RxZ091VnVRWThUWXNWUnlEM3d2ZThDZ1lFQTE5dk0KV3RId1p5eWpBczZhT05LbGJuVzBzanNtc2ZDWExuWVo0SUJJWFErL2RtWW9DUjlMZC9ZU1dNQXFoWGV6emIxdwo0YVlYQUZzckFQK3FZWG1GVkdCNDNMeDlLODVtTXU1bmR6OXBJeHMyYU9YWWlVR3BtT0xmenAwYVh3TDd1bUpvCmlwNU1RZTVJQjNvL2RXL2M3RWV2alNkbEE2ejc5bGtZVHZkWVNHTUNnWUJPY09MQisvbC9ZdC9xdlVIZ1VKOGoKd3BpSDRWa1NXcFNXeUtmL2J1UmJGWm1uZHFUbkRHaHpnZEpqSzhRQ3Y2ZmgvN2p3TmVKY1YrdDk4WjRmT01vTwoxemdnbW14Vk5uZUdyNnMwcWpVNU1NcUp3bHlqZWhSV0MrRHlSUnpsTFp3OTZuSW5HdHJGcWhaZDYwSEZtMi9DClQvcklDMDRqS3NmNmpmdWJXMFl1ZndLQmdISmlIcC9ocjZwOGxNVGdCZ2ttVmxONlBBNVdHZU1nd252MFNUSVYKeUVMSUhZVDREUzhJVGsxN0w2Mm41dUJpMWZ5bjdqRWtlZnZPVTdOcnh6VnYxNThtbitVWVhKdmgrM1h4cnhJWgpuL1RpYnFxWFlXOGFSR3luakVGSUxyazZNM3BJdTJ6NUJSL0t6SkJwejBiRHlDWE10dEh0bGpHa2NML1I1bmV4CnlpNVJBb0dCQUlXOTRFNEh5REtoMnYrRFlaK1RnaWoyR2kyNUlRUnhnSysvTDRXN3lGTFNoM2I3RnJBaFo4VDQKRlhQWjM0OHhZdmJtSC9OQUorakN2d3NEbTEzeldpM0R1d0x4N3BEalYzeS9HV250TFJWQXdCSGlFWUtzdUt2WgovdmNNcWNuNmV5L1BWNHhtaU0yMUVJVkVKVTU5WDZCczBGcXcyTkY2YzBBUkhFNmZuTFg4Ci0tLS0tRU5EIFJTQSBQUklWQVRFIEtFWS0tLS0tCg==
+  etcd-cert: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUQ5akNDQXQ2Z0F3SUJBZ0lVRyt5RmovYXZWKzRQL3JpTWZ5RXZ6OGpUenJBd0RRWUpLb1pJaHZjTkFRRUwKQlFBd1pURUxNQWtHQTFVRUJoTUNRMDR4RURBT0JnTlZCQWdUQjBKbGFXcHBibWN4RURBT0JnTlZCQWNUQjBKbAphV3BwYm1jeEREQUtCZ05WQkFvVEEyczRjekVQTUEwR0ExVUVDeE1HVTNsemRHVnRNUk13RVFZRFZRUURFd3BMCmRXSmxjbTVsZEdWek1CNFhEVEU1TURFeE5UQXhNekV3TUZvWERUSTVNREV4TWpBeE16RXdNRm93WHpFTE1Ba0cKQTFVRUJoTUNRMDR4RURBT0JnTlZCQWdUQjBKbGFVcHBibWN4RURBT0JnTlZCQWNUQjBKbGFVcHBibWN4RERBSwpCZ05WQkFvVEEyczRjekVQTUEwR0ExVUVDeE1HVTNsemRHVnRNUTB3Q3dZRFZRUURFd1JsZEdOa01JSUJJakFOCkJna3Foa2lHOXcwQkFRRUZBQU9DQVE4QU1JSUJDZ0tDQVFFQTA3by9qcVhIeStweFZOc3FJbTdEZ2N1YmlYajEKUndQM1BBYXc4WGRaZzRmWkFpZlhUemgxVjBCSDJuYWY4TWR6UW12a1dBdTQwTUs2NDMyUXU4VHFNRVRzWW9oQQp4V1BjVSsrb3IraXJKdnpaTkg5c3UrM3NQTWU1SW9KdTQxcEU3QmhLcTZXM0RuS3FQNHpmMFlhc0FFZGl1aGx1Cm02dDFGZXVPSCtQTFIzWEN3Zm1MYlI4d3QyVm5lcHcyMHNZZDhtZWxXTkEwY1BSQ05qUElGdE5VSFhaSTF4Z0IKZm1LRE1Vb2N1UThJcGNXZk9iTG1hQkxJL0pMZGw0UnFMeHhoRzkySGpzK3lCWW5FbzV6a0d1bXJ1UkZSbm54Ygpld1ZGV3JKMzFnd0V4blgxKzJiQTkyNFRjTDh3Vmg5WFUydHQzSzNSeUdmdWUxOGxKc3F3akt5cmJRSURBUUFCCm80R2pNSUdnTUE0R0ExVWREd0VCL3dRRUF3SUZvREFkQmdOVkhTVUVGakFVQmdnckJnRUZCUWNEQVFZSUt3WUIKQlFVSEF3SXdEQVlEVlIwVEFRSC9CQUl3QURBZEJnTlZIUTRFRmdRVWU2QUIrRjkyTW84cXpITlo2VGpOVjNELwo5Um93SHdZRFZSMGpCQmd3Rm9BVVRaZGtKNEdMa0NoMDArSnRFMmJvS0Y4c2NqTXdJUVlEVlIwUkJCb3dHSWNFCmZ3QUFBWWNFd0tnQ1pZY0V3S2dDWm9jRXdLZ0NaekFOQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBSnkrVEFTRmYKMU9RWlpnMC8rUW9uUFdNdlZIREU1N1VYQVhiT3Y1RG9DNzlXU2w0WWJoTzgwQTRyTnNtSk5JVmprRW5zNmdSMApKRjVidWJFOE92aU9PUXJDQnJrc3pvelRZemRmVHBiZ3ZsZlA4bmVBK3hVK3VSTHowT1lVMXJzeGZ4Y0tCRVpJCjhhUmJNQTMxdjdLOFNxUEJzb2x6RGh5SElDaFloZEJMbXRMN1VsR1RDRDMyTW5JSUJ0ZVJEeXAxeE1VMTRmMnoKR1Zzd2FscWtZaE1JOFZQTklDY1YyV1NLRTVmalNCTUpWMUpBd2hNcGUzeVM2bW1mOGwycUZnZ2gzRUpjc0NENgpvT1cva0NlRVZlOFpLenJZVVJwanZROGdTeE1rdWNlWFd6SU9aems2dWdCQWFhN0xqSTZqUDVaTE1zOGhJZVVUCjBHV1J6UjIwK0pLVzdRPT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+  etcd-ca: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUR2akNDQXFhZ0F3SUJBZ0lVSWNqU3Qza0xJQ1ZYVEM3QlNsU3B6eEVXeHBjd0RRWUpLb1pJaHZjTkFRRUwKQlFBd1pURUxNQWtHQTFVRUJoTUNRMDR4RURBT0JnTlZCQWdUQjBKbGFXcHBibWN4RURBT0JnTlZCQWNUQjBKbAphV3BwYm1jeEREQUtCZ05WQkFvVEEyczRjekVQTUEwR0ExVUVDeE1HVTNsemRHVnRNUk13RVFZRFZRUURFd3BMCmRXSmxjbTVsZEdWek1CNFhEVEU1TURFeE5UQXhNamt3TUZvWERUSTBNREV4TkRBeE1qa3dNRm93WlRFTE1Ba0cKQTFVRUJoTUNRMDR4RURBT0JnTlZCQWdUQjBKbGFXcHBibWN4RURBT0JnTlZCQWNUQjBKbGFXcHBibWN4RERBSwpCZ05WQkFvVEEyczRjekVQTUEwR0ExVUVDeE1HVTNsemRHVnRNUk13RVFZRFZRUURFd3BMZFdKbGNtNWxkR1Z6Ck1JSUJJakFOQmdrcWhraUc5dzBCQVFFRkFBT0NBUThBTUlJQkNnS0NBUUVBMGM4MmwwMm9oWE1SSDUzUy9UMWgKZWNIT3BkbXdrR1ZjNkVDOHJhQ0Q4eWFqWDZKbzh6bEh0MUpBVTYvZ0M0UU9JZUR4b2hDNEw2UTJEb0YvaXArLwpremVDWFh1Wk9DdFFzUUI1eEI3UEpkZ3BtSmgwbmFkM2hHcXErOHFxTmpSeG1wbzFOYWlxYzB2c2ZBVW1CM0VYClVrbW8vOGxLK2RKYnhkK3M3TmRmRFRhd0szNDRxY3QyWTlTb0tNc01jenU0SkVDbCthc1plVnBncVh1cDc3K1AKZmQvbkxkVnYyYnE2Skhzc1JDSlMxK1pGQUFZSzA1cUFCOHFRMlJ4M1ZKeEw0a0JsVzVQNys2SjNxa3N4VkZmUAp5V1Z0NG80cFRQRWFXb0hjTXZuR2JVYjZYR2lnaDNYVTJiMDQzbTYrcXJwT1lMMGc2MHpOT2dLUm5QWWhCQWZaCk13SURBUUFCbzJZd1pEQU9CZ05WSFE4QkFmOEVCQU1DQVFZd0VnWURWUjBUQVFIL0JBZ3dCZ0VCL3dJQkFqQWQKQmdOVkhRNEVGZ1FVVFpka0o0R0xrQ2gwMCtKdEUyYm9LRjhzY2pNd0h3WURWUjBqQkJnd0ZvQVVUWmRrSjRHTAprQ2gwMCtKdEUyYm9LRjhzY2pNd0RRWUpLb1pJaHZjTkFRRUxCUUFEZ2dFQkFLLzYxM08wYnNxMTlQZlR2dXNxCnlUQUsyUXhkNkVQNWZ3TFMvcWlhS1c5dGl1TWszaTBZQWFHYjFGakNWZmZUbzhmOWtpWnZIY2dXeC96cVg5RnAKV3l0S2JwR1BmMGYybFZCeHBNT3J0MzYzRHRVaVY3OVVqN3Q5OGphU1kyRm5jOG9wdHZZblErTVNGbkVxNzRZZwo4VXplRE5XSEQwQkFxZ29TbVpqMGFIekhyQ0JWZTdMQXZ6d2t1bmF0bDljV2IwQS9EUEhMd0g3REhJM1JSdFRxCjlWQWZOM3VSMzlFeHdiUC9Ga0plYVhCS1pBQWM5T1hzdStCbjBrdXZuUmg5UExGWFhIdzNwTFkzNjRPcVQ3MmoKMUxrdVhzb2xiNjZXR3o0cFFrRWpoUVNYS2xYM0Z5WXpDSWhCb3VSN2NKV2Z1MEFHZUpRVkY0bzc4eTc5d00vWgpSc2M9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+
+---
+
+# This manifest installs the calico/node container, as well
+# as the Calico CNI plugins and network config on
+# each master and worker node in a Kubernetes cluster.
+kind: DaemonSet
+apiVersion: extensions/v1beta1
+metadata:
+  name: calico-node
+  namespace: kube-system
+  labels:
+    k8s-app: calico-node
+spec:
+  selector:
+    matchLabels:
+      k8s-app: calico-node
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        k8s-app: calico-node
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+    spec:
+      hostNetwork: true
+      tolerations:
+        # Make sure calico/node gets scheduled on all nodes.
+        - effect: NoSchedule
+          operator: Exists
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
+      serviceAccountName: calico-node
+      # Minimize downtime during a rolling upgrade or deletion; tell Kubernetes to do a "force
+      # deletion": https://kubernetes.io/docs/concepts/workloads/pods/pod/#termination-of-pods.
+      terminationGracePeriodSeconds: 0
+      containers:
+        # Runs calico/node container on each Kubernetes node.  This
+        # container programs network policy and routes on each
+        # host.
+        - name: calico-node
+          image: quay.io/calico/node:v3.1.4
+          env:
+            # The location of the Calico etcd cluster.
+            - name: ETCD_ENDPOINTS
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_endpoints
+            # Choose the backend to use.
+            - name: CALICO_NETWORKING_BACKEND
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: calico_backend
+            # Cluster type to identify the deployment type
+            - name: CLUSTER_TYPE
+              value: "k8s,bgp"
+            # Disable file logging so `kubectl logs` works.
+            - name: CALICO_DISABLE_FILE_LOGGING
+              value: "true"
+            # Set noderef for node controller.
+            - name: CALICO_K8S_NODE_REF
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # Set Felix endpoint to host default action to ACCEPT.
+            - name: FELIX_DEFAULTENDPOINTTOHOSTACTION
+              value: "ACCEPT"
+            # The default IPv4 pool to create on startup if none exists. Pod IPs will be
+            # chosen from this range. Changing this value after installation will have
+            # no effect. This should fall within `--cluster-cidr`.
+            - name: CALICO_IPV4POOL_CIDR
+              value: "172.16.0.0/16"
+            - name: CALICO_IPV4POOL_IPIP
+              value: "off"
+            # Disable IPv6 on Kubernetes.
+            - name: FELIX_IPV6SUPPORT
+              value: "false"
+            # Set Felix logging to "info"
+            - name: FELIX_LOGSEVERITYSCREEN
+              value: "info"
+            # Set MTU for tunnel device used if ipip is enabled
+            - name: FELIX_IPINIPMTU
+              value: "1440"
+            # Location of the CA certificate for etcd.
+            - name: ETCD_CA_CERT_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_ca
+            # Location of the client key for etcd.
+            - name: ETCD_KEY_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_key
+            # Location of the client certificate for etcd.
+            - name: ETCD_CERT_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_cert
+            # Auto-detect the BGP IP address.
+            - name: IP
+              value: "autodetect"
+            - name: FELIX_HEALTHENABLED
+              value: "true"
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 250m
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: 9099
+            periodSeconds: 10
+            initialDelaySeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 9099
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /lib/modules
+              name: lib-modules
+              readOnly: true
+            - mountPath: /var/run/calico
+              name: var-run-calico
+              readOnly: false
+            - mountPath: /var/lib/calico
+              name: var-lib-calico
+              readOnly: false
+            - mountPath: /calico-secrets
+              name: etcd-certs
+        # This container installs the Calico CNI binaries
+        # and CNI network config file on each node.
+        - name: install-cni
+          image: quay.io/calico/cni:v3.1.4
+          command: ["/install-cni.sh"]
+          env:
+            # Name of the CNI config file to create.
+            - name: CNI_CONF_NAME
+              value: "10-calico.conflist"
+            # The location of the Calico etcd cluster.
+            - name: ETCD_ENDPOINTS
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_endpoints
+            # The CNI network config to install on each node.
+            - name: CNI_NETWORK_CONFIG
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: cni_network_config
+          volumeMounts:
+            - mountPath: /host/opt/cni/bin
+              name: cni-bin-dir
+            - mountPath: /host/etc/cni/net.d
+              name: cni-net-dir
+            - mountPath: /calico-secrets
+              name: etcd-certs
+      volumes:
+        # Used by calico/node.
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: var-run-calico
+          hostPath:
+            path: /var/run/calico
+        - name: var-lib-calico
+          hostPath:
+            path: /var/lib/calico
+        # Used to install CNI.
+        - name: cni-bin-dir
+          hostPath:
+            path: /opt/cni/bin
+        - name: cni-net-dir
+          hostPath:
+            path: /etc/cni/net.d
+        # Mount in the etcd TLS secrets with mode 400.
+        # See https://kubernetes.io/docs/concepts/configuration/secret/
+        - name: etcd-certs
+          secret:
+            secretName: calico-etcd-secrets
+            defaultMode: 0400
+
+---
+
+# This manifest deploys the Calico Kubernetes controllers.
+# See https://github.com/projectcalico/kube-controllers
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: calico-kube-controllers
+  namespace: kube-system
+  labels:
+    k8s-app: calico-kube-controllers
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ''
+spec:
+  # The controllers can only have a single active instance.
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      name: calico-kube-controllers
+      namespace: kube-system
+      labels:
+        k8s-app: calico-kube-controllers
+    spec:
+      # The controllers must run in the host network namespace so that
+      # it isn't governed by policy that would prevent it from working.
+      hostNetwork: true
+      tolerations:
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+      serviceAccountName: calico-kube-controllers
+      containers:
+        - name: calico-kube-controllers
+          image: quay.io/calico/kube-controllers:v3.1.4
+          env:
+            # The location of the Calico etcd cluster.
+            - name: ETCD_ENDPOINTS
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_endpoints
+            # Location of the CA certificate for etcd.
+            - name: ETCD_CA_CERT_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_ca
+            # Location of the client key for etcd.
+            - name: ETCD_KEY_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_key
+            # Location of the client certificate for etcd.
+            - name: ETCD_CERT_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: etcd_cert
+            # Choose which controllers to run.
+            - name: ENABLED_CONTROLLERS
+              value: policy,profile,workloadendpoint,node
+          volumeMounts:
+            # Mount in the etcd TLS secrets.
+            - mountPath: /calico-secrets
+              name: etcd-certs
+      volumes:
+        # Mount in the etcd TLS secrets with mode 400.
+        # See https://kubernetes.io/docs/concepts/configuration/secret/
+        - name: etcd-certs
+          secret:
+            secretName: calico-etcd-secrets
+            defaultMode: 0400
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: calico-kube-controllers
+  namespace: kube-system
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: calico-node
+  namespace: kube-system

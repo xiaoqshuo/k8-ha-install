@@ -1,0 +1,24 @@
+KUBE_CONTROLLER_MANAGER_OPTS="--port=0 \
+  --secure-port=10252 \
+  --bind-address=127.0.0.1 \
+  --kubeconfig=/etc/kubernetes/server/cfg/kube-controller-manager.kubeconfig \
+  --authentication-kubeconfig=/etc/kubernetes/server/cfg/kube-controller-manager.kubeconfig \
+  --service-cluster-ip-range=10.254.0.0/16 \
+  --cluster-name=kubernetes \
+  --cluster-signing-cert-file=/etc/kubernetes/server/ssl/ca.pem \
+  --cluster-signing-key-file=/etc/kubernetes/server/ssl/ca-key.pem \
+  --experimental-cluster-signing-duration=8760h \
+  --root-ca-file=/etc/kubernetes/server/ssl/ca.pem \
+  --service-account-private-key-file=/etc/kubernetes/server/ssl/ca-key.pem \
+  --leader-elect=true \
+  --feature-gates=RotateKubeletServerCertificate=true \
+  --controllers=*,bootstrapsigner,tokencleaner \
+  --horizontal-pod-autoscaler-use-rest-clients=true \
+  --horizontal-pod-autoscaler-sync-period=10s \
+  --tls-cert-file=/etc/kubernetes/server/ssl/kube-controller-manager.pem \
+  --tls-private-key-file=/etc/kubernetes/server/ssl/kube-controller-manager-key.pem \
+  --use-service-account-credentials=true \
+  --alsologtostderr=true \
+  --logtostderr=false \
+  --log-dir=/var/log/kubernetes \
+  --v=2"
