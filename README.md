@@ -2144,7 +2144,7 @@ spec:
       - sleep
       - "3600"
     imagePullPolicy: IfNotPresent
-    name: centoschao
+    name: centos-test
   restartPolicy: Always
 ````
 
@@ -2388,6 +2388,8 @@ apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
 metadata:
   name: user-admin
+  annotations:
+    rbac.authorization.kubernetes.io/autoupdate: "true"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
