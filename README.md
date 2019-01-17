@@ -1995,7 +1995,7 @@ NAME            STATUS   ROLES    AGE     VERSION
 192.168.2.113   Ready    <none>   3h30m   v1.12.4
 ````
 
-### 6.2 创建nginx web测试文件
+### 7.2 创建nginx web测试文件
 ````
 # cat > nginx-web.yml << EOF
 apiVersion: v1
@@ -2196,24 +2196,65 @@ Address: 10.254.29.144
 ````
 
 ## 8 ，部署 metrics
-### 8.1 安装之前需要为kubernetes增加配置项
+### 8.1 生成证书
+- front-proxy-csr.json
+
+````
+# cat > front-proxy-csr.json << EOF
+{
+  "CN": "system:front-proxy",
+  "hosts": [],
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "L": "Beijing",
+      "ST": "Beijing",
+      "O": "k8s",
+      "OU": "System"
+    }
+  ]
+}
+EOF
+````
+
+- 生成证书
+
+````
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes front-proxy-csr.json | cfssljson -bare front-proxy
+````
+
+- 分发证书
+
+````
+USER=root
+CONTROL_PLANE_IPS="k8s-master01 k8s-master02 k8s-master03 k8s-node01 k8s-node02 k8s-node03"
+for host in $CONTROL_PLANE_IPS; do
+    scp front-proxy-key.pem front-proxy.pem "${USER}"@$host:/etc/kubernetes/server/ssl/
+done
+````
+
+### 8.2 安装之前需要为kubernetes增加配置项
 - 为/usr/lib/systemd/systemcontroller-manager增加启动项
 
 ````
-    --horizontal-pod-autoscaler-use-rest-clients=true
+  --horizontal-pod-autoscaler-use-rest-clients=true
 ````
 
 - 为/usr/lib/systemd/system/kube-apiserver.service增加启动项
 
 ````
-    --requestheader-client-ca-file=/etc/kubernetes/ssl/ca.pem \
-    --requestheader-allowed-names=  \
-    --requestheader-extra-headers-prefix=X-Remote-Extra- \
-    --requestheader-group-headers=X-Remote-Group \
-    --requestheader-username-headers=X-Remote-User \
-    --proxy-client-cert-file=/etc/kubernetes/ssl/kubelet-client.crt \
-    --proxy-client-key-file=/etc/kubernetes/ssl/kubelet-client.key \
-    --enable-aggregator-routing=true
+  --requestheader-client-ca-file=/etc/kubernetes/server/ssl/ca.pem  \
+  --requestheader-allowed-names=aggregator  \
+  --requestheader-extra-headers-prefix=X-Remote-Extra- \
+  --requestheader-group-headers=X-Remote-Group \
+  --requestheader-username-headers=X-Remote-User \
+  --proxy-client-cert-file=/etc/kubernetes/server/ssl/front-proxy.pem \
+  --proxy-client-key-file=/etc/kubernetes/server/ssl/front-proxy-key.pem \
+  --enable-aggregator-routing=true
 ````
 
 - 启动服务
@@ -2224,14 +2265,14 @@ systemctl restart kube-apiserver
 systemctl restart kube-controller-manager
 ````
 
-### 8.2 下载 metrics 配置文件
+### 8.3 下载 metrics 配置文件
 ````
 wget https://github.com/kubernetes/kubernetes/releases/download/v1.12.4/kubernetes.tar.gz
 tar zxvf kubernetes.tar.gz
 cp -a kubernetes/cluster/addons/metrics-server/ /etc/kubernetes/
 ````
 
-### 8.3 更改配置文件
+### 8.4 更改配置文件
 ````
 # cat > metrics-server-deployment.yaml << EOF
 ---
@@ -2277,12 +2318,12 @@ spec:
 EOF
 ````
 
-### 8.4 创建 metrics
+### 8.5 创建 metrics
 ````
 # kubectl apply -f metrics-server
 ````
 
-### 8.5 查看状态
+### 8.6 查看状态
 ````
 # kubectl get -n kube-system all -o wide| grep metrics
 
@@ -2391,6 +2432,7 @@ kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | gre
 
 
 - **参考**：
+    - https://zhangguanzhang.github.io/2018/09/18/kubernetes-1-11-x-bin/
     - https://www.cnblogs.com/harlanzhang/p/10116118.html
     - http://blog.51cto.com/lizhenliang/2325770
     - https://www.cnblogs.com/root0/p/9953287.html

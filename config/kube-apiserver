@@ -24,8 +24,8 @@ KUBE_APISERVER_OPTS=" --enable-admission-plugins=Initializers,NamespaceLifecycle
   --requestheader-extra-headers-prefix=X-Remote-Extra- \
   --requestheader-group-headers=X-Remote-Group \
   --requestheader-username-headers=X-Remote-User \
-  --proxy-client-cert-file=/etc/kubernetes/server/ssl/kubelet.crt \
-  --proxy-client-key-file=/etc/kubernetes/server/ssl/kubelet.key \
+  --proxy-client-cert-file=/etc/kubernetes/server/ssl/front-proxy.pem \
+  --proxy-client-key-file=/etc/kubernetes/server/ssl/front-proxy-key.pem \
   --enable-aggregator-routing=true\
   --enable-swagger-ui=true \
   --allow-privileged=true \
