@@ -1,4 +1,4 @@
-该文档有bug不完善，待续中
+# 该文档有bug不完善，待续中
 - 部署博客 https://www.cnblogs.com/xiaoqshuo/p/10195143.html
 
 ## 1，环境部署
