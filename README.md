@@ -1,3 +1,4 @@
+# 该文档有bug不完善，待续中
 - 部署博客 https://www.cnblogs.com/xiaoqshuo/p/10195143.html
 
 ## 1，环境部署
@@ -2430,10 +2431,15 @@ kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | gre
 
 ![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190117162244915-629409416.png)
 
+- 使用 Chrome 浏览器，需要在启动程序 --> 属性 --> 目标选项里，追加 ````--test-type --ignore-certificate-errors````
+
+![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190118095309618-1467788581.png)
+
 
 
 
 - **参考**：
+    - https://jimmysong.io/kubernetes-handbook/practice/dashboard-addon-installation.html
     - https://zhangguanzhang.github.io/2018/09/18/kubernetes-1-11-x-bin/
     - https://www.cnblogs.com/harlanzhang/p/10116118.html
     - http://blog.51cto.com/lizhenliang/2325770
