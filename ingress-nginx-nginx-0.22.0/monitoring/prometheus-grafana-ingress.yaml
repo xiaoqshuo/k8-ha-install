@@ -1,0 +1,21 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: prometheus-grafana-ingress
+  namespace: ingress-nginx
+spec:
+  rules:
+  - host: grafana.k8s.ing
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: grafana
+          servicePort: 3000
+  - host: prometheus.k8s.ing
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: prometheus-server
+          servicePort: 9090
