@@ -1,0 +1,21 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: test-ingress
+  namespace: default
+spec:
+  rules:
+  - host: test.apache.ingress
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: my-apache
+          servicePort: 80
+  - host: test.nginx.ingress
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: my-nginx
+          servicePort: 80
