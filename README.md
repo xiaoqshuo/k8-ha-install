@@ -39,9 +39,10 @@ yum -y install vim tree wget lrzsz
 ````
 cat  << EOF >> /etc/profile
 ###########################
-export PS1='\[\e[32;1m\][\u@\h \W]# \[\e[0m\]'
-export HISTTIMEFORMAT="root_%F %T : "
+export PS1='\[\e[32;1m\][\u@\h \W]\$ \[\e[0m\]'
+export HISTTIMEFORMAT="`whoami`_%F %T :"
 alias grep='grep --color=auto'
+alias egrep='egrep --color=auto'
 EOF
 ````
 
