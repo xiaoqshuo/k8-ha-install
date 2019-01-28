@@ -41,8 +41,27 @@ spec:
               name: data
       restartPolicy: Always
       volumes:
-        - emptyDir: {}
-          name: data
+#        - emptyDir: {}
+#          name: data
+        - name: data
+          persistentVolumeClaim:
+            claimName: pvc-grafana
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-grafana
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: ingress-nginx
+
+spec:
+  accessModes: [ "ReadWriteOnce" ]
+  storageClassName: "gluster-heketi"
+  resources:
+    requests:
+      storage: 1Gi
 
 ---
 apiVersion: v1
@@ -59,6 +78,7 @@ spec:
     - port: 3000
       protocol: TCP
       targetPort: 3000
+      nodePort: 30303
   selector:
     app.kubernetes.io/name: grafana
     app.kubernetes.io/part-of: ingress-nginx

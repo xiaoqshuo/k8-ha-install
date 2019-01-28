@@ -389,6 +389,86 @@ Commercial support is available at
 
 ![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190125162918742-959649420.png)
 
+## 4，部署monitoring
+### 4.1 配置 ingress 
+
+````
+# cat > monitoring/prometheus-grafana-ingress.yaml << EOF
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: prometheus-grafana-ingress
+  namespace: ingress-nginx
+spec:
+  rules:
+  - host: grafana.k8s.ing
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: grafana
+          servicePort: 3000
+  - host: prometheus.k8s.ing
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: prometheus-server
+          servicePort: 9090
+EOF
+````
+
+### 4.2 在ingress-nginx官网deploy/monitoring目录下载相关yaml文件
+
+````
+# ls monitoring/
+configuration.yaml  grafana.yaml  prometheus-grafana-ingress.yaml  prometheus.yaml
+````
+
+### 4.3 部署服务
+
+````
+# kubectl apply -f monitoring/
+````
+
+### 4.4 查看状态
+
+````
+# kubectl get pod,svc,ingress -n ingress-nginx
+NAME                                    READY   STATUS    RESTARTS   AGE
+pod/grafana-5ccff7668d-7lk6q            1/1     Running   0          2d14h
+pod/prometheus-server-7f87788f6-7zcfx   1/1     Running   0          2d14h
+
+NAME                                       TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+service/glusterfs-dynamic-pvc-grafana      ClusterIP   10.254.146.102   <none>        1/TCP            2d14h
+service/glusterfs-dynamic-pvc-prometheus   ClusterIP   10.254.160.58    <none>        1/TCP            2d14h
+service/grafana                            NodePort    10.254.244.77    <none>        3000:30303/TCP   2d14h
+service/prometheus-server                  NodePort    10.254.168.143   <none>        9090:32090/TCP   2d14h
+
+NAME                                            HOSTS                                ADDRESS   PORTS   AGE
+ingress.extensions/prometheus-grafana-ingress   grafana.k8s.ing,prometheus.k8s.ing             80      2d14h
+````
+
+### 4.5 配置grafana
+- 解析打开页面：http://grafana.k8s.ing
+
+![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190128093110674-1841402693.png)
+
+![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190128093207645-427896327.png)
+
+![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190128093318611-1566198628.png)
+
+- 导入 json 文件
+- 在ingress-nginx官网deploy/grafana/dashboards目录下载相关nginx.json文件
+
+![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190128093356631-695724552.png)
+
+![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190128093423617-1660855050.png)
+
+![](https://img2018.cnblogs.com/blog/1306461/201901/1306461-20190128093548620-2103278897.png)
+
+
 - 参考：
     - https://blog.csdn.net/shida_csdn/article/details/84032019
     - http://blog.51cto.com/devingeng/2149377
+    - https://www.jianshu.com/p/ed97007604d7

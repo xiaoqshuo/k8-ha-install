@@ -84,8 +84,25 @@ spec:
           configMap:
             name: prometheus-configuration
         - name: prometheus-storage-volume
-          emptyDir: {}
+#          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: pvc-prometheus
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-prometheus
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: ingress-nginx
 
+spec:
+  accessModes: [ "ReadWriteOnce" ]
+  storageClassName: "gluster-heketi"
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: v1
 kind: Service
@@ -104,6 +121,6 @@ spec:
   ports:
     - port: 9090
       targetPort: 9090
-
+      nodePort: 32090
 ---
 
