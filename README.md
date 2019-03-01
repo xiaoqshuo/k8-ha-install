@@ -2268,11 +2268,17 @@ systemctl restart kube-controller-manager
 ````
 
 ### 8.3 下载 metrics 配置文件
+- 方法一：使用官方的配置文件
+
 ````
 wget https://github.com/kubernetes/kubernetes/releases/download/v1.12.4/kubernetes.tar.gz
 tar zxvf kubernetes.tar.gz
 cp -a kubernetes/cluster/addons/metrics-server/ /etc/kubernetes/
 ````
+
+- 方法二：参考本人GitHub上的配置文件
+    - https://github.com/xiaoqshuo/k8-ha-install/tree/Binary_deployment_12.4/metrics-server
+
 
 ### 8.4 更改配置文件
 ````
