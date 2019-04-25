@@ -598,7 +598,8 @@ systemctl status keepalived|grep Active
 - 下载这个包（kubernetes-server-linux-amd64.tar.gz）就够了，包含了所需的所有组件。
 
 ````
-wget https://dl.k8s.io/v1.12.4/kubernetes-server-linux-amd64.tar.gz
+wget https://dl.k8s.io/v1.12.4/kubernetes-server-linux-amd64.tar.gz    # 不能下载用下一个链接（国外下载）
+# wget https://storage.googleapis.com/kubernetes-release/release/v1.12.4/kubernetes-server-linux-amd64.tar.gz    # （国内下载）
 tar zxvf kubernetes-server-linux-amd64.tar.gz
 cd kubernetes/server/bin
 cp kube-apiserver kube-scheduler kube-controller-manager kubectl /etc/kubernetes/server/bin/
