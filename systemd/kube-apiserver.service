@@ -1,0 +1,15 @@
+[Unit]
+Description=Kubernetes API Server
+Documentation=https://github.com/kubernetes/kubernetes
+After=network.target
+
+[Service]
+EnvironmentFile=-/etc/kubernetes/server/cfg/kube-apiserver
+ExecStart=/etc/kubernetes/server/bin/kube-apiserver $KUBE_APISERVER_OPTS
+Restart=on-failure
+RestartSec=5
+Type=notify
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

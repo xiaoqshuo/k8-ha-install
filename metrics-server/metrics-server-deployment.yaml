@@ -22,28 +22,21 @@ spec:
       labels:
         k8s-app: metrics-server
     spec:
-      volumes:
-      - name: timezone
-        hostPath:
-          path: /etc/timezone
-          type: File
-      - name: localtime
-        hostPath:
-          path: /usr/share/zoneinfo/Asia/Shanghai
-          type: File
       serviceAccountName: metrics-server
+      volumes:
+      # mount in tmp so we can safely use from-scratch images and/or read-only containers
+      - name: tmp-dir
+        emptyDir: {}
       containers:
       - name: metrics-server
-        image: gcr.io/google_containers/metrics-server-amd64:v0.2.1
-        imagePullPolicy: IfNotPresent
+        image: xiaoqshuo/metrics-server-amd64:v0.3.1
+        imagePullPolicy: Always
         command:
         - /metrics-server
-        # - --source=kubernetes.summary_api:''
-        # 10255 readonly端口已经作废
-        - --source=kubernetes.summary_api:https://kubernetes.default?kubeletHttps=true&kubeletPort=10250&insecure=true
-        - --metric-resolution=30s
+        - --kubelet-insecure-tls
+        - --kubelet-preferred-address-types=InternalIP
         volumeMounts:
-        - name: timezone
-          mountPath: "/etc/timezone"
-        - name: localtime
-          mountPath: "/etc/localtime"
+        - name: tmp-dir
+          mountPath: /tmp
+
+

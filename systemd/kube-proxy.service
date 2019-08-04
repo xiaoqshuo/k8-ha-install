@@ -1,0 +1,30 @@
+[Unit]
+Description=Kubernetes Kube-Proxy Server
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=network.target
+
+[Service]
+WorkingDirectory=/var/lib/kube-proxy
+ExecStart=/etc/kubernetes/server/bin/kube-proxy \
+  --bind-address=192.168.2.101 \
+  --hostname-override=k8s-master01 \
+  --cluster-cidr=172.16.0.0/16 \
+  --kubeconfig=/etc/kubernetes/server/cfg/kube-proxy.kubeconfig \
+  --feature-gates=SupportIPVSProxyMode=true \
+  --masquerade-all \
+  --proxy-mode=ipvs \
+  --ipvs-min-sync-period=5s \
+  --ipvs-sync-period=5s \
+  --ipvs-scheduler=rr \
+  --logtostderr=true \
+  --v=2 \
+  --logtostderr=false \
+  --log-dir=/var/lib/kube-proxy/log
+
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+

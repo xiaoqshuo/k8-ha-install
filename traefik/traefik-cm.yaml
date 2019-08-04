@@ -1,0 +1,17 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: traefik-conf
+  namespace: kube-system
+data:
+  traefik.toml: |+
+    defaultEntryPoints = ["http", "https"]
+    [entryPoints]
+      [entryPoints.http]
+      address = ":80"
+      [entryPoints.https]
+      address = ":443"
+        [entryPoints.https.tls]
+          [[entryPoints.https.tls.certificates]]
+          CertFile = "/etc/kubernetes/server/ssl/ca.pem"
+          KeyFile = "/etc/kubernetes/server/ssl/ca-key.pem"
