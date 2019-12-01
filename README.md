@@ -1,1124 +1,1497 @@
-```
-
-  安装过程请:https://www.cnblogs.com/xiaoqshuo/p/10069609.html
-  
-  参考：
-      https://github.com/dotbalo/k8s-ha-install
-      https://www.cnblogs.com/dukuan/p/9856269.html
-      https://kubernetes.io/docs/setup/independent/high-availability/
-      https://github.com/cookeem/kubeadm-ha/blob/master/README_CN.md
-      https://blog.csdn.net/ygqygq2/article/details/81333400
-  
-```
-# kubeadm-highavailiability - kubernetes high availiability deployment based on kubeadm, for Kubernetes version v.1.12.3 v1.11.x/v1.9.x/v1.7.x/v1.6.x
+# k8s 1.14.8 二进制离线部署
+
+## 1，kubernetes 介绍
+
+- Kubernetes（K8S）是Google开源的容器集群管理系统，K8S在Docker容器技术的基础之上，大大地提高了容器化部署应用简单高效。并且具备了完整的集群管理能力，涵盖项目周期的各个环节。
+- Docker与Kubernetes联系：Docker是一个容器引擎，用于运行容器，Kubernetes是一个容器编排系统，不具备容器引擎功能，相比Docker是一个更高级封装，而他们在一起堪称珠联璧合。
+
+## 2，集群环境规划
 
-![k8s logo](images/Kubernetes.png)
+### 2.1 软件环境
 
-- [中文文档(for v1.11.x版本)](README_CN.md)
-- [English document(for v1.11.x version)](README.md)
-- [中文文档(for v1.9.x版本)](v1.9/README_CN.md)
-- [English document(for v1.9.x version)](v1.9/README.md)
-- [中文文档(for v1.7.x版本)](v1.7/README_CN.md)
-- [English document(for v1.7.x version)](v1.7/README.md)
-- [中文文档(for v1.6.x版本)](v1.6/README_CN.md)
-- [English document(for v1.6.x version)](v1.6/README.md)
+| 服务       | 版本                                 |
+| :--------- | :----------------------------------- |
+| CentOS 7.6 | CentOS Linux release 7.6.1810 (Core) |
+| kubernetes | v1.14.8                              |
+| Docker     | v18.09                               |
+| etcd       | v3.3.17                              |
+| Calico     | v3.10.1                              |
+| CoreDNS    | v1.5.2                               |
 
----
+### 2.2 服务器角色
 
-- [GitHub project URL](https://github.com/cookeem/kubeadm-ha/)
-- [OSChina project URL](https://git.oschina.net/cookeem/kubeadm-ha/)
+| IP              | hostname | application                                                  | CPU  | Memory |
+| :-------------- | :------- | :----------------------------------------------------------- | ---- | ------ |
+| 192.168.154.130 | VIP      |                                                              |      |        |
+| 192.168.154.131 | k8s-m1   | etcd，kube-apiserver，kube-controller-manager，kube-scheduler，haproxy，keepalived，nginx，docker-distribution | 2C   | 2G     |
+| 192.168.154.132 | k8s-m2   | etcd，kube-apiserver，kube-controller-manager，kube-scheduler，haproxy，keepalived | 2C   | 2G     |
+| 192.168.154.133 | k8s-m3   | etcd，kube-apiserver，kube-controller-manager，kube-scheduler，haproxy，keepalived | 2C   | 2G     |
+| 192.168.154.134 | k8s-n1   | docker，kubelet，kube-proxy                                  | 2C   | 2G     |
+| 192.168.154.135 | k8s-n2   | docker，kubelet，kube-proxy                                  | 2C   | 2G     |
 
----
+## 3，部署前环境准备
 
-- This operation instruction is for version v1.11.x kubernetes cluster
+- 所有的操作都在master1上进行
 
-> v1.11.x version now support deploy tls etcd cluster in control plane
+- 登录maser1服务器
+- 创建k8s模板目录
+
+````
+mkdir -p /etc/kubernetes/template
+````
 
-### category
+- 上传 k8s 相关包
 
-1. [deployment architecture](#deployment-architecture)
-    1. [deployment architecture summary](#deployment-architecture-summary)
-    1. [detail deployment architecture](#detail-deployment-architecture)
-    1. [hosts list](#hosts-list)
-1. [prerequisites](#prerequisites)
-    1. [version info](#version-info)
-    1. [required docker images](#required-docker-images)
-    1. [system configuration](#system-configuration)
-1. [kubernetes installation](#kubernetes-installation)
-    1. [firewalld and iptables settings](#firewalld-and-iptables-settings)
-    1. [kubernetes and related services installation](#kubernetes-and-related-services-installation)
-    1. [master hosts mutual trust](#master-hosts-mutual-trust)
-1. [masters high availiability installation](#masters-high-availiability-installation)
-    1. [create configuration files](#create-configuration-files)
-    1. [kubeadm initialization](#kubeadm-initialization)
-    1. [high availiability configuration](#high-availiability-configuration)
-1. [masters load balance settings](#masters-load-balance-settings)
-    1. [keepalived installation](#keepalived-installation)
-    1. [nginx load balance settings](#nginx-load-balance-settings)
-    1. [kube-proxy HA settings](#kube-proxy-ha-settings)
-    1. [high availiability verify](#high-availiability-verify)
-    1. [kubernetes addons installation](#kubernetes-addons-installation)
-1. [workers join kubernetes cluster](#workers-join-kubernetes-cluster)
-    1. [workers join HA cluster](#workers-join-ha-cluster)
-1. [verify kubernetes cluster installation](#verify-kubernetes-cluster-installation)
-    1. [verify kubernetes cluster high availiablity installation](#verify-kubernetes-cluster-high-availiablity-installation)
+````
+链接：https://pan.baidu.com/s/1rCwv6ZUGpiF6iCBDSeBVEw 
+提取码：o97i 
+复制这段内容后打开百度网盘手机App，操作更方便哦
+````
 
-### deployment architecture
+- 进入 k8s 模板目录，解压相关包
 
-#### deployment architecture summary
-
-![ha logo](images/ha.png)
-
----
-[category](#category)
-
-#### detail deployment architecture
-
-![k8s ha](images/k8s-ha.png)
-
-- kubernetes components:
-
-> kube-apiserver: exposes the Kubernetes API. It is the front-end for the Kubernetes control plane. It is designed to scale horizontally – that is, it scales by deploying more instances.
-> etcd: is used as Kubernetes’ backing store. All cluster data is stored here. Always have a backup plan for etcd’s data for your Kubernetes cluster.
-> kube-scheduler: watches newly created pods that have no node assigned, and selects a node for them to run on.
-> kube-controller-manager: runs controllers, which are the background threads that handle routine tasks in the cluster. Logically, each controller is a separate process, but to reduce complexity, they are all compiled into a single binary and run in a single process.
-> kubelet: is the primary node agent. It watches for pods that have been assigned to its node (either by apiserver or via local configuration file)
-> kube-proxy: enables the Kubernetes service abstraction by maintaining network rules on the host and performing connection forwarding.
-
-- load balancer
-
-> keepalived cluster config a virtual IP address (192.168.20.10), this virtual IP address point to k8s-master01, k8s-master02, k8s-master03.
-> nginx service as the load balancer of k8s-master01, k8s-master02, k8s-master03's apiserver. The other nodes kubernetes services connect the keepalived virtual ip address (192.168.20.10) and nginx exposed port (16443) to communicate with the master cluster's apiservers.
-
----
-
-[category](#category)
-
-#### hosts list
-
-HostName | IPAddress | Notes | Components
-:--- | :--- | :--- | :---
-k8s-master01 ~ 03 | 192.168.20.20 ~ 22 | master nodes * 3 | keepalived, nginx, etcd, kubelet, kube-apiserver
-k8s-master-lb     | 192.168.20.10 | keepalived virtual IP | N/A
-k8s-node01 ~ 08   | 192.168.20.30 ~ 37 | worker nodes * 8 | kubelet
-
----
-
-[category](#category)
-
-### prerequisites
-
-#### version info
-
-- Linux version: CentOS 7.4.1708
-
-- Core version: 4.6.4-1.el7.elrepo.x86_64
-
-```sh
-$ cat /etc/redhat-release
-CentOS Linux release 7.4.1708 (Core)
-
-$ uname -r
-4.6.4-1.el7.elrepo.x86_64
-```
-
-- docker version: 17.12.0-ce-rc2
-
-```sh
-$ docker version
-Client:
- Version:	17.12.0-ce-rc2
- API version:	1.35
- Go version:	go1.9.2
- Git commit:	f9cde63
- Built:	Tue Dec 12 06:42:20 2017
- OS/Arch:	linux/amd64
-
-Server:
- Engine:
-  Version:	17.12.0-ce-rc2
-  API version:	1.35 (minimum version 1.12)
-  Go version:	go1.9.2
-  Git commit:	f9cde63
-  Built:	Tue Dec 12 06:44:50 2017
-  OS/Arch:	linux/amd64
-  Experimental:	false
-```
-
-- kubeadm version: v1.11.1
-
-```sh
-$ kubeadm version
-kubeadm version: &version.Info{Major:"1", Minor:"11", GitVersion:"v1.11.1", GitCommit:"b1b29978270dc22fecc592ac55d903350454310a", GitTreeState:"clean", BuildDate:"2018-07-17T18:50:16Z", GoVersion:"go1.10.3", Compiler:"gc", Platform:"linux/amd64"}
-```
-
-- kubelet version: v1.11.1
-
-```sh
-$ kubelet --version
-Kubernetes v1.11.1
-```
-
-- networks addons
-
-> calico
-
----
-
-[category](#category)
-
-#### required docker images
-
-- required docker images and tags
-
-```sh
-# kuberentes basic components
-
-# use kubeadm to list all required docker images
-$ kubeadm config images list --kubernetes-version=v1.11.1
-k8s.gcr.io/kube-apiserver-amd64:v1.11.1
-k8s.gcr.io/kube-controller-manager-amd64:v1.11.1
-k8s.gcr.io/kube-scheduler-amd64:v1.11.1
-k8s.gcr.io/kube-proxy-amd64:v1.11.1
-k8s.gcr.io/pause:3.1
-k8s.gcr.io/etcd-amd64:3.2.18
-k8s.gcr.io/coredns:1.1.3
-
-# use kubeadm to pull all required docker images
-$ kubeadm config images pull --kubernetes-version=v1.11.1
-
-# kubernetes networks addons
-$ docker pull quay.io/calico/typha:v0.7.4
-$ docker pull quay.io/calico/node:v3.1.3
-$ docker pull quay.io/calico/cni:v3.1.3
-
-# kubernetes metrics server
-$ docker pull gcr.io/google_containers/metrics-server-amd64:v0.2.1
-
-# kubernetes dashboard
-$ docker pull gcr.io/google_containers/kubernetes-dashboard-amd64:v1.8.3
-
-# kubernetes heapster
-$ docker pull k8s.gcr.io/heapster-amd64:v1.5.4
-$ docker pull k8s.gcr.io/heapster-influxdb-amd64:v1.5.2
-$ docker pull k8s.gcr.io/heapster-grafana-amd64:v5.0.4
-
-# kubernetes apiserver load balancer
-$ docker pull nginx:latest
-
-# prometheus
-$ docker pull prom/prometheus:v2.3.1
-
-# traefik
-$ docker pull traefik:v1.6.3
-
-# istio
-$ docker pull docker.io/jaegertracing/all-in-one:1.5
-$ docker pull docker.io/prom/prometheus:v2.3.1
-$ docker pull docker.io/prom/statsd-exporter:v0.6.0
-$ docker pull gcr.io/istio-release/citadel:1.0.0
-$ docker pull gcr.io/istio-release/galley:1.0.0
-$ docker pull gcr.io/istio-release/grafana:1.0.0
-$ docker pull gcr.io/istio-release/mixer:1.0.0
-$ docker pull gcr.io/istio-release/pilot:1.0.0
-$ docker pull gcr.io/istio-release/proxy_init:1.0.0
-$ docker pull gcr.io/istio-release/proxyv2:1.0.0
-$ docker pull gcr.io/istio-release/servicegraph:1.0.0
-$ docker pull gcr.io/istio-release/sidecar_injector:1.0.0
-$ docker pull quay.io/coreos/hyperkube:v1.7.6_coreos.0
-```
-
----
-
-[category](#category)
-
-#### system configuration
-
-- on all kubernetes nodes: add kubernetes' repository
-
-```sh
-$ cat <<EOF > /etc/yum.repos.d/kubernetes.repo
-[kubernetes]
-name=Kubernetes
-baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
-enabled=1
-gpgcheck=1
-repo_gpgcheck=1
-gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
-exclude=kube*
-EOF
-```
-
-- on all kubernetes nodes: update system
-
-```sh
-$ yum update -y
-```
-
-- on all kubernetes nodes: set SELINUX to permissive mode
-
-```sh
-$ vi /etc/selinux/config
-SELINUX=permissive
-
-$ setenforce 0
-```
-
-- on all kubernetes nodes: set iptables parameters
-
-```sh
-$ cat <<EOF >  /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables = 1
-net.ipv4.ip_forward = 1
-EOF
-
-$ sysctl --system
-```
-
-- on all kubernetes nodes: disable swap
-
-```sh
-$ swapoff -a
-
-# disable swap mount point in /etc/fstab
-$ vi /etc/fstab
-#/dev/mapper/centos-swap swap                    swap    defaults        0 0
-
-# check swap is disabled
-$ cat /proc/swaps
-Filename                Type        Size    Used    Priority
-```
-
-- on all kubernetes nodes: reboot hosts
-
-```sh
-# reboot hosts
-$ reboot
-```
-
----
-
-[category](#category)
-
-### kubernetes installation
-
-#### firewalld and iptables settings
-
-- on all kubernetes nodes: enable firewalld
-
-```sh
-# restart firewalld service
-$ systemctl enable firewalld
-$ systemctl restart firewalld
-$ systemctl status firewalld
-```
-
-- master ports list
-
-Protocol | Direction | Port | Comment
-:--- | :--- | :--- | :---
-TCP | Inbound | 16443*    | Load balancer Kubernetes API server port
-TCP | Inbound | 6443*     | Kubernetes API server
-TCP | Inbound | 4001      | etcd listen client port
-TCP | Inbound | 2379-2380 | etcd server client API
-TCP | Inbound | 10250     | Kubelet API
-TCP | Inbound | 10251     | kube-scheduler
-TCP | Inbound | 10252     | kube-controller-manager
-TCP | Inbound | 10255     | Read-only Kubelet API (Deprecated)
-TCP | Inbound | 30000-32767 | NodePort Services
-
-- on all master nodes: set firewalld policy
-
-```sh
-$ firewall-cmd --zone=public --add-port=16443/tcp --permanent
-$ firewall-cmd --zone=public --add-port=6443/tcp --permanent
-$ firewall-cmd --zone=public --add-port=4001/tcp --permanent
-$ firewall-cmd --zone=public --add-port=2379-2380/tcp --permanent
-$ firewall-cmd --zone=public --add-port=10250/tcp --permanent
-$ firewall-cmd --zone=public --add-port=10251/tcp --permanent
-$ firewall-cmd --zone=public --add-port=10252/tcp --permanent
-$ firewall-cmd --zone=public --add-port=30000-32767/tcp --permanent
-
-$ firewall-cmd --reload
-
-$ firewall-cmd --list-all --zone=public
-public (active)
-  target: default
-  icmp-block-inversion: no
-  interfaces: ens2f1 ens1f0 nm-bond
-  sources:
-  services: ssh dhcpv6-client
-  ports: 4001/tcp 6443/tcp 2379-2380/tcp 10250/tcp 10251/tcp 10252/tcp 30000-32767/tcp
-  protocols:
-  masquerade: no
-  forward-ports:
-  source-ports:
-  icmp-blocks:
-  rich rules:
-```
-
-- worker ports list
-
-Protocol | Direction | Port | Comment
-:--- | :--- | :--- | :---
-TCP | Inbound | 10250       | Kubelet API
-TCP | Inbound | 30000-32767 | NodePort Services
-
-- on all worker nodes: set firewalld policy
-
-```sh
-$ firewall-cmd --zone=public --add-port=10250/tcp --permanent
-$ firewall-cmd --zone=public --add-port=30000-32767/tcp --permanent
-
-$ firewall-cmd --reload
-
-$ firewall-cmd --list-all --zone=public
-public (active)
-  target: default
-  icmp-block-inversion: no
-  interfaces: ens2f1 ens1f0 nm-bond
-  sources:
-  services: ssh dhcpv6-client
-  ports: 10250/tcp 30000-32767/tcp
-  protocols:
-  masquerade: no
-  forward-ports:
-  source-ports:
-  icmp-blocks:
-  rich rules:
-```
-
-- on all kubernetes nodes: set firewalld to enable kube-proxy port forward
-
-```sh
-$ firewall-cmd --permanent --direct --add-rule ipv4 filter INPUT 1 -i docker0 -j ACCEPT -m comment --comment "kube-proxy redirects"
-$ firewall-cmd --permanent --direct --add-rule ipv4 filter FORWARD 1 -o docker0 -j ACCEPT -m comment --comment "docker subnet"
-$ firewall-cmd --reload
-
-$ firewall-cmd --direct --get-all-rules
-ipv4 filter INPUT 1 -i docker0 -j ACCEPT -m comment --comment 'kube-proxy redirects'
-ipv4 filter FORWARD 1 -o docker0 -j ACCEPT -m comment --comment 'docker subnet'
-
-# restart firewalld service
-$ systemctl restart firewalld
-```
-
-- on all kubernetes nodes: remove this iptables chains, this settings will prevent kube-proxy node port forward. ( Notice: please run this command each time you restart firewalld ) Let's set the crontab.
-
-```sh
-$ crontab -e
-0,5,10,15,20,25,30,35,40,45,50,55 * * * * /usr/sbin/iptables -D INPUT -j REJECT --reject-with icmp-host-prohibited
-```
-
----
-
-[category](#category)
-
-#### kubernetes and related services installation
-
-- on all kubernetes nodes: install kubernetes and related services, then start up kubelet and docker daemon
-
-```sh
-$ yum install -y docker-ce-17.12.0.ce-0.2.rc2.el7.centos.x86_64
-$ yum install -y docker-compose-1.9.0-5.el7.noarch
-$ systemctl enable docker && systemctl start docker
-
-$ yum install -y kubelet-1.11.1-0.x86_64 kubeadm-1.11.1-0.x86_64 kubectl-1.11.1-0.x86_64
-$ systemctl enable kubelet && systemctl start kubelet
-```
-
-- on all master nodes: install and start keepalived service
-
-```sh
-$ yum install -y keepalived
-$ systemctl enable keepalived && systemctl restart keepalived
-```
-
-#### master hosts mutual trust
-
-- on k8s-master01: set hosts mutual trust
-
-```sh
-$ rm -rf /root/.ssh/*
-$ ssh k8s-master01 pwd
-$ ssh k8s-master02 rm -rf /root/.ssh/*
-$ ssh k8s-master03 rm -rf /root/.ssh/*
-$ ssh k8s-master02 mkdir -p /root/.ssh/
-$ ssh k8s-master03 mkdir -p /root/.ssh/
-
-$ scp /root/.ssh/known_hosts root@k8s-master02:/root/.ssh/
-$ scp /root/.ssh/known_hosts root@k8s-master03:/root/.ssh/
-
-$ ssh-keygen -t rsa -P '' -f /root/.ssh/id_rsa
-$ cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
-$ scp /root/.ssh/authorized_keys root@k8s-master02:/root/.ssh/
-```
-
-- on k8s-master02: set hosts mutual trust
-
-```sh
-$ ssh-keygen -t rsa -P '' -f /root/.ssh/id_rsa
-$ cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
-$ scp /root/.ssh/authorized_keys root@k8s-master03:/root/.ssh/
-```
-
-- on k8s-master03: set hosts mutual trust
-
-```sh
-$ ssh-keygen -t rsa -P '' -f /root/.ssh/id_rsa
-$ cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
-$ scp /root/.ssh/authorized_keys root@k8s-master01:/root/.ssh/
-$ scp /root/.ssh/authorized_keys root@k8s-master02:/root/.ssh/
-```
-
----
-
-[category](#category)
-
-### masters high availiability installation
-
-#### create configuration files
-
-- on k8s-master01: clone kubeadm-ha project source code
-
-```sh
-$ git clone https://github.com/cookeem/kubeadm-ha
-```
-
-- on k8s-master01: use `create-config.sh` to create relative config files, this script will create all configuration files, follow the setting comment and make sure you set the parameters correctly.
-
-```sh
-$ cd kubeadm-ha
-
-$ vi create-config.sh
-# master keepalived virtual ip address
-export K8SHA_VIP=192.168.60.79
-# master01 ip address
-export K8SHA_IP1=192.168.60.72
-# master02 ip address
-export K8SHA_IP2=192.168.60.77
-# master03 ip address
-export K8SHA_IP3=192.168.60.78
-# master keepalived virtual ip hostname
-export K8SHA_VHOST=k8s-master-lb
-# master01 hostname
-export K8SHA_HOST1=k8s-master01
-# master02 hostname
-export K8SHA_HOST2=k8s-master02
-# master03 hostname
-export K8SHA_HOST3=k8s-master03
-# master01 network interface name
-export K8SHA_NETINF1=nm-bond
-# master02 network interface name
-export K8SHA_NETINF2=nm-bond
-# master03 network interface name
-export K8SHA_NETINF3=nm-bond
-# keepalived auth_pass config
-export K8SHA_KEEPALIVED_AUTH=412f7dc3bfed32194d1600c483e10ad1d
-# calico reachable ip address
-export K8SHA_CALICO_REACHABLE_IP=192.168.60.1
-# kubernetes CIDR pod subnet, if CIDR pod subnet is "172.168.0.0/16" please set to "172.168.0.0"
-export K8SHA_CIDR=172.168.0.0
-
-# run the shell, it will create 3 masters' kubeadm config files, keepalived config files, nginx load balance config files, and calico config files.
-$ ./create-config.sh
-create kubeadm-config.yaml files success. config/k8s-master01/kubeadm-config.yaml
-create kubeadm-config.yaml files success. config/k8s-master02/kubeadm-config.yaml
-create kubeadm-config.yaml files success. config/k8s-master03/kubeadm-config.yaml
-create keepalived files success. config/k8s-master01/keepalived/
-create keepalived files success. config/k8s-master02/keepalived/
-create keepalived files success. config/k8s-master03/keepalived/
-create nginx-lb files success. config/k8s-master01/nginx-lb/
-create nginx-lb files success. config/k8s-master02/nginx-lb/
-create nginx-lb files success. config/k8s-master03/nginx-lb/
-create calico.yaml file success. calico/calico.yaml
-
-# set hostname environment variables
-$ export HOST1=k8s-master01
-$ export HOST2=k8s-master02
-$ export HOST3=k8s-master03
-
-# copy kubeadm config files to all master nodes, path is /root/
-$ scp -r config/$HOST1/kubeadm-config.yaml $HOST1:/root/
-$ scp -r config/$HOST2/kubeadm-config.yaml $HOST2:/root/
-$ scp -r config/$HOST3/kubeadm-config.yaml $HOST3:/root/
-
-# copy keepalived config files to all master nodes, path is /etc/keepalived/category/
-$ scp -r config/$HOST1/keepalived/* $HOST1:/etc/keepalived/
-$ scp -r config/$HOST2/keepalived/* $HOST2:/etc/keepalived/
-$ scp -r config/$HOST3/keepalived/* $HOST3:/etc/keepalived/
-
-# copy nginx load balance config files to all master nodes, path is /root/
-$ scp -r config/$HOST1/nginx-lb $HOST1:/root/
-$ scp -r config/$HOST2/nginx-lb $HOST2:/root/
-$ scp -r config/$HOST3/nginx-lb $HOST3:/root/
-```
-
----
-
-[category](#category)
-
-#### kubeadm initialization
-
-- on k8s-master01: use kubeadm to init a kubernetes cluster
-
-```sh
-# notice: you must save the following output message: kubeadm join --token ${YOUR_TOKEN} --discovery-token-ca-cert-hash ${YOUR_DISCOVERY_TOKEN_CA_CERT_HASH} , this command will use lately.
-$ kubeadm init --config /root/kubeadm-config.yaml
-kubeadm join 192.168.20.20:6443 --token ${YOUR_TOKEN} --discovery-token-ca-cert-hash sha256:${YOUR_DISCOVERY_TOKEN_CA_CERT_HASH}
-```
-
-- on all master nodes: set kubectl client environment variable
-
-```sh
-$ cat <<EOF >> ~/.bashrc
-export KUBECONFIG=/etc/kubernetes/admin.conf
-EOF
-
-$ source ~/.bashrc
-
-# kubectl now can connect the kubernetes cluster
-$ kubectl get nodes
-```
-
-- on k8s-master01: wait until etcd, kube-apiserver, kube-controller-manager, kube-scheduler startup
-
-```sh
-$ kubectl get pods -n kube-system -o wide
-NAME                                   READY     STATUS    RESTARTS   AGE       IP              NODE
-...
-etcd-k8s-master01                      1/1       Running   0          18m       192.168.20.20   k8s-master01
-kube-apiserver-k8s-master01            1/1       Running   0          18m       192.168.20.20   k8s-master01
-kube-controller-manager-k8s-master01   1/1       Running   0          18m       192.168.20.20   k8s-master01
-kube-scheduler-k8s-master01            1/1       Running   1          18m       192.168.20.20   k8s-master01
-...
-```
-
----
-
-[category](#category)
-
-#### high availiability configuration
-
-- on k8s-master01: copy certificates to other master nodes
-
-```sh
-# set master nodes hostname
-$ export CONTROL_PLANE_IPS="k8s-master02 k8s-master03"
-
-# copy certificates to other master nodes
-$ for host in ${CONTROL_PLANE_IPS}; do
-  scp /etc/kubernetes/pki/ca.crt $host:/etc/kubernetes/pki/ca.crt
-  scp /etc/kubernetes/pki/ca.key $host:/etc/kubernetes/pki/ca.key
-  scp /etc/kubernetes/pki/sa.key $host:/etc/kubernetes/pki/sa.key
-  scp /etc/kubernetes/pki/sa.pub $host:/etc/kubernetes/pki/sa.pub
-  scp /etc/kubernetes/pki/front-proxy-ca.crt $host:/etc/kubernetes/pki/front-proxy-ca.crt
-  scp /etc/kubernetes/pki/front-proxy-ca.key $host:/etc/kubernetes/pki/front-proxy-ca.key
-  scp /etc/kubernetes/pki/etcd/ca.crt $host:/etc/kubernetes/pki/etcd/ca.crt
-  scp /etc/kubernetes/pki/etcd/ca.key $host:/etc/kubernetes/pki/etcd/ca.key
-  scp /etc/kubernetes/admin.conf $host:/etc/kubernetes/admin.conf
+````
+cd  /etc/kubernetes/template
+# 配置文件
+tar zxvf k8s-Binary_deployment_1.14.8_cfg.tar.gz
+# 命令
+tar zxvf k8s-Binary_deployment_1.14.8_bin.tar.gz
+# 镜像
+tar zxvf k8s-Binary_deployment_1.14.8_images.tar.gz
+# rpm 包
+tar zxvf k8s-Binary_deployment_1.14.8_k8s-centos76-repo.tar.gz
+````
+
+- 在k8s集群环境变量文件修改配置IP，网段等：k8s_env
+
+````
+# 声明集群成员信息
+declare -A MasterArray otherMaster NodeArray AllNode Other
+MasterArray=(['k8s-m1']=192.168.154.131 ['k8s-m2']=192.168.154.132 ['k8s-m3']=192.168.154.133)
+Master1=(['k8s-m1']=192.168.154.131)
+otherMaster=(['k8s-m2']=192.168.154.132 ['k8s-m3']=192.168.154.133)
+NodeArray=(['k8s-n1']=192.168.154.134 ['k8s-n2']=192.168.154.135)
+# 下面复制上面的信息粘贴即可
+AllNode=(['k8s-m1']=192.168.154.131 ['k8s-m2']=192.168.154.132 ['k8s-m3']=192.168.154.133 ['k8s-n1']=192.168.154.134 ['k8s-n2']=192.168.154.135)
+Other=(['k8s-m2']=192.168.154.132 ['k8s-m3']=192.168.154.133 ['k8s-n1']=192.168.154.134 ['k8s-n2']=192.168.154.135)
+
+# 高可用集群haproxy+keepalived虚拟IP
+export VIP=192.168.154.130
+#export INGRESS_VIP=192.168.154.129
+[ "${#MasterArray[@]}" -eq 1 ] && export VIP=${MasterArray[@]} || export API_PORT=8443
+export KUBE_APISERVER=https://${VIP}:${API_PORT:=6443}
+
+# 节点密码
+export HOST_PWD="root"
+
+# 声明需要安装的的k8s版本
+export KUBE_VERSION=v1.14.8
+
+# k8s 模板目录
+export TEMP_DIR=/etc/kubernetes/template/k8s-Binary_deployment_1.14.8
+
+# k8s 项目目录
+export PROJECT_DIR=/etc/kubernetes/k8s-Binary_deployment_1.14.8
+
+# k8s 日志路径
+export LOG_DIR=/var/log/kubernetes
+
+# k8s 工作目录
+export WORK_DIR=/var/lib/kubernetes
+
+# 节点间互联网络接口名称
+export IFACE="ens33"
+
+# 服务网段，部署前路由不可达，部署后集群内路由可达
+export SERVICE_CIDR="10.254.0.0/16"
+
+# Pod 网段，建议 /16 段地址，部署前路由不可达，部署后集群内路由可达
+export CLUSTER_CIDR="172.30.0.0/16"
+
+# 服务端口范围 (NodePort Range)
+export NODE_PORT_RANGE="1024-32700"
+
+# kubernetes 服务 IP (一般是 SERVICE_CIDR 中第一个IP)
+export CLUSTER_KUBERNETES_SVC_IP="10.254.0.1"
+
+# 集群 DNS 服务 IP (从 SERVICE_CIDR 中预分配)
+export CLUSTER_DNS_SVC_IP="10.254.0.2"
+
+# 集群 DNS 域名（末尾不带点号）
+export CLUSTER_DNS_DOMAIN="cluster.local"
+
+# etcd
+export ETCD_VERSION=v3.3.17
+export ETCD_DATA_DIR=/var/lib/etcd/data
+export ETCD_WAL_DIR=/var/lib/etcd/wal
+export ETCD_SVC=$( xargs -n1<<<${MasterArray[@]} | sort | sed 's#^#https://#;s#$#:2379#;$s#\n##' | paste -d, -s - )
+export ETCD_INITIAL_CLUSTER=$( for i in ${!MasterArray[@]};do echo $i=https://${MasterArray[$i]}:2380; done | sort | paste -d, -s - )
+
+# docker registry
+export DOCKER_REGISTRY_PORT=8888
+export DOCKER_REGISTRY="registry.k8s.com:${DOCKER_REGISTRY_PORT}"
+
+# yum repo
+export YUM_REPO_PORT=88
+export YUM_REPO="http://${Master1}:${YUM_REPO_PORT}"
+````
+
+- 加载集群变量
+
+````
+source /etc/kubernetes/template/k8s-Binary_deployment_1.14.8/k8s_env
+````
+
+- 配置本地repo
+
+````
+cd /etc/yum.repos.d/
+mkdir bak
+mv *repo bak
+cp ${TEMP_DIR}/cfg/k8s.repo .
+sed -i "s@##YUM_REPO##@file://${TEMP_DIR}/k8s-centos76-repo@g" k8s.repo
+````
+### 3.1 配置节点互信
+
+````
+yum install -y sshpass
+
+#分发公钥
+ssh-keygen -t rsa -P "" -f /root/.ssh/id_rsa
+for NODE in ${!AllNode[@]};do
+    echo "--- $NODE ${AllNode[$NODE]} ---" 
+    sshpass -p ${HOST_PWD} ssh-copy-id -i /root/.ssh/id_rsa.pub -o StrictHostKeyChecking=no root@${AllNode[$NODE]}
+    ssh root@${AllNode[$NODE]} "hostname"
+done 
+````
+
+### 3.2 所有节点设置永久主机名
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} "hostnamectl set-hostname ${NODE}"
 done
-```
+````
 
-- on k8s-master02: master node join the cluster
+### 3.3 添加所有节点信息到hosts文件
 
-```sh
-# create all certificates and kubelet config files
-$ kubeadm alpha phase certs all --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubeconfig controller-manager --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubeconfig scheduler --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubelet config write-to-disk --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubelet write-env-file --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubeconfig kubelet --config /root/kubeadm-config.yaml
-$ systemctl restart kubelet
+````
+echo "### k8s cluster ###" >> /etc/hosts
+for NODE in ${!AllNode[@]};do echo ${AllNode[$NODE]} ${NODE} ; done | sort | paste -d -s - >> /etc/hosts
+````
 
-# set k8s-master01 and k8s-master02 HOSTNAME and ip address
-$ export CP0_IP=192.168.20.20
-$ export CP0_HOSTNAME=k8s-master01
-$ export CP1_IP=192.168.20.21
-$ export CP1_HOSTNAME=k8s-master02
+- 分发hosts文件
 
-# add etcd member to the cluster
-$ kubectl exec -n kube-system etcd-${CP0_HOSTNAME} -- etcdctl --ca-file /etc/kubernetes/pki/etcd/ca.crt --cert-file /etc/kubernetes/pki/etcd/peer.crt --key-file /etc/kubernetes/pki/etcd/peer.key --endpoints=https://${CP0_IP}:2379 member add ${CP1_HOSTNAME} https://${CP1_IP}:2380
-$ kubeadm alpha phase etcd local --config /root/kubeadm-config.yaml
+````
+for NODE in "${!Other[@]}"; do
+    echo "--- $NODE ${Other[$NODE]} ---"
+    scp /etc/hosts ${Other[$NODE]}:/etc/hosts
+done
+````
 
-# prepare to start master
-$ kubeadm alpha phase kubeconfig all --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase controlplane all --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase mark-master --config /root/kubeadm-config.yaml
+### 3.4 关闭 firewalld 防火墙 以及 swap 分区
 
-# modify /etc/kubernetes/admin.conf server settings
-$ sed -i "s/192.168.20.20:6443/192.168.20.21:6443/g" /etc/kubernetes/admin.conf
-```
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} " systemctl disable --now firewalld NetworkManager "
+    ssh ${AllNode[$NODE]} " sed -ri 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config "
+    ssh ${AllNode[$NODE]} " sed -ri '/^[^#]*swap/s@^@#@' /etc/fstab "
+done
+````
 
-- on k8s-master03: master node join the cluster
+### 3.5 部署集群内网yum仓库
 
-```sh
-# create all certificates and kubelet config files
-$ kubeadm alpha phase certs all --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubeconfig controller-manager --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubeconfig scheduler --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubelet config write-to-disk --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubelet write-env-file --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase kubeconfig kubelet --config /root/kubeadm-config.yaml
-$ systemctl restart kubelet
+- 安装 nginx
 
-# set k8s-master01 and k8s-master03 HOSTNAME and ip address
-$ export CP0_IP=192.168.20.20
-$ export CP0_HOSTNAME=k8s-master01
-$ export CP2_IP=192.168.20.22
-$ export CP2_HOSTNAME=k8s-master03
+````
+yum -y install nginx createrepo
+````
 
-# add etcd member to the cluster
-$ kubectl exec -n kube-system etcd-${CP0_HOSTNAME} -- etcdctl --ca-file /etc/kubernetes/pki/etcd/ca.crt --cert-file /etc/kubernetes/pki/etcd/peer.crt --key-file /etc/kubernetes/pki/etcd/peer.key --endpoints=https://${CP0_IP}:2379 member add ${CP2_HOSTNAME} https://${CP2_IP}:2380
-$ kubeadm alpha phase etcd local --config /root/kubeadm-config.yaml
+- 修改配置文件
 
-# prepare to start master
-$ kubeadm alpha phase kubeconfig all --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase controlplane all --config /root/kubeadm-config.yaml
-$ kubeadm alpha phase mark-master --config /root/kubeadm-config.yaml
+````
+cd ${TEMP_DIR}/cfg
+sed -i "s@##YUM_REPO_PORT##@${YUM_REPO_PORT}@g"  ${TEMP_DIR}/cfg/k8srepo.conf
+sed -i "s@##TEMP_DIR##@${TEMP_DIR}@g"  ${TEMP_DIR}/cfg/k8srepo.conf
+cp ${TEMP_DIR}/cfg/k8srepo.conf /etc/nginx/conf.d/
+````
 
-# modify /etc/kubernetes/admin.conf server settings
-$ sed -i "s/192.168.20.20:6443/192.168.20.22:6443/g" /etc/kubernetes/admin.conf
-```
+- 启动 nginx
 
-- on all master nodes: enable hpa to collect performance data form apiserver, add config below in file `/etc/kubernetes/manifests/kube-controller-manager.yaml`
+````
+nginx
+````
 
-```sh
-$ vi /etc/kubernetes/manifests/kube-controller-manager.yaml
-    - --horizontal-pod-autoscaler-use-rest-clients=false
-```
+- 分发 yum repo文件
 
-- on all master nodes: enable istio auto-injection, add config below in file `/etc/kubernetes/manifests/kube-apiserver.yaml`
+-  生成repo索引
 
-```sh
-$ vi /etc/kubernetes/manifests/kube-apiserver.yaml
-    - --enable-admission-plugins=NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,DefaultTolerationSeconds,MutatingAdmissionWebhook,ValidatingAdmissionWebhook,ResourceQuota
+````
+createrepo ${TEMP_DIR}/k8s-centos76-repo/
+````
 
-# restart kubelet service
-systemctl restart kubelet
-```
+- 配置 yum repo
 
-- on any master nodes: install calico network addon, after network addon installed the cluster nodes status will be `READY`
+````
+cd ${TEMP_DIR}/cfg
+sed -i "s@##YUM_REPO##@${YUM_REPO}@g"  ${TEMP_DIR}/cfg/k8s.repo
+````
 
-```sh
-$ kubectl apply -f calico/
-```
+- 分发 yum repo
 
----
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} "mkdir -p /etc/yum.repos.d/bak && mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/bak/"
+    scp ${TEMP_DIR}/cfg/k8s.repo ${AllNode[$NODE]}:/etc/yum.repos.d/
+    ssh ${AllNode[$NODE]} "yum makecache"
+done
+````
 
-[category](#category)
+- 所有节点安装命令
 
-### masters load balance settings
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} " yum -y install vim tree wget lrzsz net-tools expect unzip yum-utils device-mapper-persistent-data lvm2  conntrack ipvsadm ipset jq iptables curl sysstat libseccomp bash-completion socat ntp ntpdate  docker-distribution  docker-ce-18.09.9-3.el7 perl "
+done
+````
 
-#### keepalived installation
+### 3.6 配置ipvs内核模块 
 
-- on all master nodes: restart keepalived service
+- 加载集群变量
 
-```sh
-$ systemctl restart keepalived
-$ systemctl status keepalived
+````
+source /etc/kubernetes/template/k8s-Binary_deployment_1.14.8/k8s_env
+````
+
+-  所有机器选择需要开机加载的内核模块,以下是 ipvs 模式需要加载的模块并设置开机自动加载 
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} " yum install ipvsadm ipset sysstat conntrack libseccomp -y " 
+    scp ${TEMP_DIR}/cfg/ipvs.conf ${AllNode[$NODE]}:/etc/modules-load.d/ipvs.conf
+    ssh ${AllNode[$NODE]} " systemctl enable --now systemd-modules-load.service "
+    ssh ${AllNode[$NODE]} " systemctl status systemd-modules-load.service | grep active "
+done
+
+# 上面如果systemctl enable命令报错可以systemctl status -l systemd-modules-load.service看看哪个内核模块加载不了,在/etc/modules-load.d/ipvs.conf里注释掉它再enable试试
+````
+
+### 3.7 配置系统参数
+
+-  所有机器需要设定/etc/sysctl.d/k8ssysctl.conf的系统参数。
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    scp ${TEMP_DIR}/cfg/k8ssysctl.conf ${AllNode[$NODE]}:/etc/sysctl.d/k8ssysctl.conf
+    ssh ${AllNode[$NODE]} " sysctl --system "
+done
+````
+
+### 3.8 安装docker-ce
+
+-  检查系统内核和模块是否适合运行 docker (仅适用于 linux 系统) 
+
+````
+bash ${TEMP_DIR}/bin/check-config.sh
+````
+
+- 安装 docker-ce
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} " mkdir -p /etc/docker/  && yum -y install yum-utils device-mapper-persistent-data lvm2 docker-ce-18.09.9-3.el7 "
+done
+````
+
+- 配置 daemon.json
+
+````
+sed -i "s@##DOCKER_REGISTRY##@${DOCKER_REGISTRY}@g"  ${TEMP_DIR}/cfg/daemon.json
+
+````
+
+-  设置docker开机启动,CentOS安装完成后docker需要手动设置docker命令补全 
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} " yum install -y bash-completion && cp /usr/share/bash-completion/completions/docker /etc/bash_completion.d/ "
+    scp ${TEMP_DIR}/cfg/daemon.json ${AllNode[$NODE]}:/etc/docker/daemon.json
+    ssh ${AllNode[$NODE]} " systemctl enable --now docker "
+    ssh ${AllNode[$NODE]} " systemctl status docker | grep active "
+done
+````
+
+### 3.9 部署集群内网docker镜像仓库
+
+- 参考：docker 镜像搭建 文档
+
+````
+yum -y install docker-distribution
+systemctl enable --now docker-distribution
+systemctl status docker-distribution
+````
+
+- 配置TLS
+  - 为了启用TLS协议传输，需要生成自签名证书。命令如下：
+
+````
+mkdir ${TEMP_DIR}/crts/ && cd ${TEMP_DIR}/crts
+openssl req \
+  -newkey rsa:2048 -nodes -keyout k8s.com.key \
+  -x509 -days 3650 -out k8s.com.crt -subj \
+  "/C=CN/ST=GD/L=SZ/O=Global Security/OU=IT Department/CN=*.k8s.com"
+````
+
+- 编辑镜像仓库服务配置文件/etc/docker-distribution/registry/config.yml。
+
+````
+cat > /etc/docker-distribution/registry/config.yml << EOF
+version: 0.1
+log:
+  fields:
+    service: registry
+storage:
+    cache:
+        layerinfo: inmemory
+    filesystem:
+        rootdirectory: /var/lib/registry
+http:
+   addr: :${DOCKER_REGISTRY_PORT}
+   tls:
+       certificate: ${TEMP_DIR}/crts/k8s.com.crt
+       key: ${TEMP_DIR}/crts/k8s.com.key
+EOF
+````
 
-# check keepalived vip
-$ curl -k https://k8s-master-lb:6443
-```
+- 修改完毕后，刷新systemd配置。命令如下：
 
----
+````
+systemctl daemon-reload
+````
+
+- 重启Docker Distribution服务。命令如下：
+
+````
+systemctl restart docker-distribution
+````
+
+- 分发配置自签名证书
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    scp ${TEMP_DIR}/crts/k8s.com.crt ${AllNode[$NODE]}:/etc/pki/ca-trust/source/anchors/
+    ssh ${AllNode[$NODE]} " update-ca-trust extract "
+done
+````
+
+- 重启docker
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} " systemctl restart docker "
+done
+````
+
+- 添加hosts解析
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} "echo "$(hostname -i) $(echo ${DOCKER_REGISTRY}| awk -F '[:]' '{print $1}')" >> /etc/hosts"
+done
+````
+
+- 导入镜像
+
+````
+cd ${TEMP_DIR}/images/
+for i in `ls`;do docker load -i $i ;done
+````
+
+- 打tag
+
+````
+docker images | awk '{print "docker tag "$1":"$2" ""'"${DOCKER_REGISTRY}"'""/"$1":"$2}' | xargs -i bash -c "{}"
+docker images | awk '{print "docker push ""'"${DOCKER_REGISTRY}"'""/"$1":"$2}' | xargs -i bash -c "{}"
+````
+
+### 3.10 重启更新加载
+
+````
+# 重启其他所有节点
+for NODE in "${!Other[@]}"; do
+    echo "--- $NODE ${Other[$NODE]} ---"
+    ssh ${Other[$NODE]} " reboot "
+done
+# 重启当前master节点
+reboot
+````
+
+
+## 4，部署 ETCD
+
+- 加载集群变量
+
+````
+source /etc/kubernetes/template/k8s-Binary_deployment_1.14.8/k8s_env
+````
+
+- 安装证书工具
+
+````
+cp ${TEMP_DIR}/bin/cfssl ${TEMP_DIR}/bin/cfssljson ${TEMP_DIR}/bin/cfssl-certinfo /usr/local/bin/
+````
+
+- 生成 CA 证书
+
+````
+cd ${TEMP_DIR}/pki/
+cfssl gencert -initca ca-csr.json | cfssljson -bare ca -
+````
+
+### 4.1 生成 etcd 证书
+
+- 创建 Etcd 服务器 CA 证书签名请求 etcd-csr.json
+
+````
+cd ${TEMP_DIR}/pki/
+sed -i '/"hosts":/r '<(xargs -n1<<<${MasterArray[@]} | sort | sed 's#^\w.*\+#    "&",#')  etcd-csr.json
+````
+
+- 生成证书
+
+````
+cd ${TEMP_DIR}/pki/
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes etcd-csr.json | cfssljson -bare etcd
+# ls *.pem
+ca-key.pem  ca.pem  etcd-key.pem  etcd.pem
+````
+
+### 4.2 创建分发etcd 配置文件证书
+
+````
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/systemd/etcd.service 
+sed -i "s@##ETCD_DATA_DIR##@${ETCD_DATA_DIR}@g" ${TEMP_DIR}/cfg/etcd
+sed -i "s@##ETCD_WAL_DIR##@${ETCD_WAL_DIR}@g" ${TEMP_DIR}/cfg/etcd
+sed -i "s@##ETCD_INITIAL_CLUSTER##@${ETCD_INITIAL_CLUSTER}@g" ${TEMP_DIR}/cfg/etcd
+
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} "mkdir -p ${PROJECT_DIR}/{pki,etcd} ${ETCD_DATA_DIR} ${ETCD_WAL_DIR}"
+    scp ${TEMP_DIR}/bin/{etcd,etcdctl}  ${MasterArray[$NODE]}:/usr/local/bin/
+    scp ${TEMP_DIR}/pki/*.pem ${MasterArray[$NODE]}:${PROJECT_DIR}/pki/
+    scp ${TEMP_DIR}/systemd/etcd.service ${MasterArray[$NODE]}:/usr/lib/systemd/system/etcd.service
+    scp ${TEMP_DIR}/cfg/etcd ${MasterArray[$NODE]}:${PROJECT_DIR}/etcd/etcd
+    ssh ${MasterArray[$NODE]} "sed -i "s@##ETCD_NAME##@${NODE}@g"  ${PROJECT_DIR}/etcd/etcd"
+    ssh ${MasterArray[$NODE]} "sed -i "s@##PUBLIC_IP##@${MasterArray[$NODE]}@g"  ${PROJECT_DIR}/etcd/etcd"
+    ssh ${MasterArray[$NODE]} 'systemctl daemon-reload'
+done
+````
+
+### 4.3 启动 etcd
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'systemctl enable --now etcd' &
+done
+wait
+````
+
+### 4.4 验证etcd
+- 加载集群变量
+
+````
+source /etc/kubernetes/template/k8s-Binary_deployment_1.14.8/k8s_env
+````
+
+
+````
+# 验证命令
+etcdctl \
+--ca-file=${PROJECT_DIR}/pki/ca.pem \
+--cert-file=${PROJECT_DIR}/pki/etcd.pem \
+--key-file=${PROJECT_DIR}/pki/etcd-key.pem \
+--endpoints="${ETCD_SVC}" \
+cluster-health
+
+# 查看 etcd 主节点
+ETCDCTL_API=3 \
+    etcdctl   \
+   --cert ${PROJECT_DIR}/pki/etcd.pem  \
+   --key ${PROJECT_DIR}/pki/etcd-key.pem \
+   --cacert ${PROJECT_DIR}/pki/ca.pem \
+    --endpoints ${ETCD_SVC} endpoint status
+
+# 查看 etcd key
+ETCDCTL_API=3 \
+    etcdctl   \
+   --cert ${PROJECT_DIR}/pki/etcd.pem  \
+   --key ${PROJECT_DIR}/pki/etcd-key.pem \
+   --cacert ${PROJECT_DIR}/pki/ca.pem \
+    --endpoints ${ETCD_SVC} get / --prefix --keys-only
+````
+
+## 5，部署 master 节点
+
+### 5.1 Haproxy+keepalived配置k8s master高可用
+
+- keepalived 提供 kube-apiserver 对外服务的 VIP；
+- haproxy 监听 VIP，后端连接所有 kube-apiserver 实例，提供健康检查和负载均衡功能；
+- 运行 keepalived 和 haproxy 的节点称为 LB 节点。由于 keepalived 是一主多备运行模式，故至少两个 LB 节点。
+- 本文档复用 master 节点的三台机器，haproxy 监听的端口(8443) 需要与 kube-apiserver 的端口 6443 不同，避免冲突。
+- keepalived 在运行过程中周期检查本机的 haproxy 进程状态，如果检测到 haproxy 进程异常，则触发重新选主的过程，VIP 将飘移到新选出来的主节点，从而实现 VIP 的高可用。
+- 所有组件（如 kubeclt、apiserver、controller-manager、scheduler 等）都通过 VIP 和 haproxy 监听的 8443 端口访问 kube-apiserver 服务。
+
+#### 5.1.1 配置 haproxy分发配置文件
+- 注入master信息
+
+````
+sed -i '$r '<(paste <( seq -f'    server k8s-m%g' ${#MasterArray[@]} ) <( xargs -n1<<<${MasterArray[@]} | sort | sed 's#$#:6443 check inter 2000 fall 2 rise 2 weight 1#')) ${TEMP_DIR}/cfg/haproxy.cfg
+````
+
+- 分发配置文件
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} "yum install -y keepalived haproxy"
+    scp ${TEMP_DIR}/cfg/haproxy.cfg ${MasterArray[$NODE]}:/etc/haproxy/haproxy.cfg
+done
+````
+
+#### 5.1.2 配置 keepalived分发配置文件
+- 修改配置文件
+
+````
+sed -i "s@##VIP##@${VIP}@g"  ${TEMP_DIR}/cfg/keepalived.conf 
+sed -i "s@##eth0##@${IFACE}@g"  ${TEMP_DIR}/cfg/keepalived.conf
+\cp ${TEMP_DIR}/cfg/keepalived.conf  /etc/keepalived/keepalived.conf
+sed -i "s@##120##@120@g"  /etc/keepalived/keepalived.conf
+````
+
+- 分发配置文件
+
+````
+Num=120
+for NODE in "${!otherMaster[@]}"; do
+    echo "--- $NODE ${otherMaster[$NODE]} ---"
+    scp ${TEMP_DIR}/cfg/keepalived.conf ${otherMaster[$NODE]}:/etc/keepalived/keepalived.conf  
+    ssh ${otherMaster[$NODE]} "sed -i "s@MASTER@BACKUP@g" /etc/keepalived/keepalived.conf"
+    for (( i=0; i<${#otherMaster[@]};i++));do
+    ssh ${otherMaster[$NODE]} "sed -i "s@##120##@$(($Num-10))@g" /etc/keepalived/keepalived.conf"
+    Num=$(($Num-10))
+    done
+done
+````
+
+#### 5.1.3 启动haproxy和keepalived服务
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'systemctl enable --now haproxy' &
+    ssh ${MasterArray[$NODE]} 'systemctl enable --now keepalived' &
+done
+wait
+````
+
+#### 5.1.4 查看服务状态以及VIP情况
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'systemctl status haproxy|grep Active'
+    ssh ${MasterArray[$NODE]} 'systemctl status keepalived|grep Active' 
+    ssh ${MasterArray[$NODE]} "ip addr show | grep ${VIP}"
+done
+````
+
+
+
+### 5.2 部署 kubectl 命令工具
+
+- kubectl 是 kubernetes 集群的命令行管理工具，本文档介绍安装和配置它的步骤。
+- kubectl 默认从 ~/.kube/config 文件读取 kube-apiserver 地址、证书、用户名等信息，如果没有配置，执行 kubectl 命令时可能会出错。
+
+#### 5.2.1 分发 MASTER 命令文件
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    scp ${TEMP_DIR}/bin/kube{-apiserver,-scheduler,-controller-manager,ctl,adm}  ${MasterArray[$NODE]}:/usr/local/bin/
+done
+````
+
+#### 5.2.2 创建请求证书
+
+````
+cd ${TEMP_DIR}/pki/
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes admin-csr.json | cfssljson -bare admin
+````
+
+- 分发证书
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    scp ${TEMP_DIR}/pki/admin*.pem  ${MasterArray[$NODE]}:${PROJECT_DIR}/pki/
+done
+````
+
+#### 5.2.3 创建  ~/.kube/config 文件
+
+````
+cd ${TEMP_DIR}/cfg/
+kubectl config set-cluster kubernetes \
+  --certificate-authority=${PROJECT_DIR}/pki/ca.pem \
+  --embed-certs=true \
+  --server=${KUBE_APISERVER} \
+  --kubeconfig=kubectl.kubeconfig
+
+# 设置客户端认证参数
+kubectl config set-credentials admin \
+  --client-certificate=${PROJECT_DIR}/pki/admin.pem \
+  --client-key=${PROJECT_DIR}/pki/admin-key.pem \
+  --embed-certs=true \
+  --kubeconfig=kubectl.kubeconfig
+
+# 设置上下文参数
+kubectl config set-context kubernetes \
+  --cluster=kubernetes \
+  --user=admin \
+  --kubeconfig=kubectl.kubeconfig
+  
+# 设置默认上下文
+kubectl config use-context kubernetes --kubeconfig=kubectl.kubeconfig
+````
+
+- 分发 kubeconfig
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} " mkdir -p ~/.kube/ "
+    scp ${TEMP_DIR}/cfg/kubectl.kubeconfig  ${MasterArray[$NODE]}:~/.kube/config
+    ssh ${MasterArray[$NODE]} "kubectl completion bash > /etc/bash_completion.d/kubectl"
+done
+````
+
+
+
+### 5.3 部署 apiserver 组件
+
+#### 5.3.1 配置 apiserver 证书
+
+- apiserver-csr.json
+
+````
+cd ${TEMP_DIR}/pki/
+sed -i '/"hosts":/r '<(echo ${CLUSTER_KUBERNETES_SVC_IP} | sed 's#^\w.*\+#      "&",#') apiserver-csr.json
+sed -i '/"hosts":/r '<(xargs -n1<<<${MasterArray[@]} | sort | sed 's#^\w.*\+#      "&",#') apiserver-csr.json
+sed -i '/"hosts":/r '<(echo ${VIP}| sed 's#^\w.*\+#      "&",#') apiserver-csr.json
+````
+
+- 生成 apiserver 证书和私钥
+
+````
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes apiserver-csr.json | cfssljson -bare apiserver
+````
+
+- 生成 front-proxy 证书和私钥
+
+````
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes front-proxy-csr.json | cfssljson -bare front-proxy
+````
+
+#### 5.3.2 创建加密配置文件
+
+````
+cat > ${TEMP_DIR}/cfg/encryption-config.yaml <<EOF
+kind: EncryptionConfig
+apiVersion: v1
+resources:
+  - resources:
+      - secrets
+    providers:
+      - aescbc:
+          keys:
+            - name: key1
+              secret: $(head -c 32 /dev/urandom | base64)
+      - identity: {}
+EOF
+````
+
+#### 5.3.3 kube-apiserver 配置文件
+
+````
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/cfg/kube-apiserver 
+sed -i "s@##SERVICE_CIDR##@${SERVICE_CIDR}@g" ${TEMP_DIR}/cfg/kube-apiserver 
+sed -i "s@##NODE_PORT_RANGE##@${NODE_PORT_RANGE}@g" ${TEMP_DIR}/cfg/kube-apiserver 
+sed -i "s@##ETCD_SVC##@${ETCD_SVC}@g" ${TEMP_DIR}/cfg/kube-apiserver 
+sed -i "s@##LOG_DIR##@${LOG_DIR}@g" ${TEMP_DIR}/cfg/kube-apiserver
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/systemd/kube-apiserver.service
+````
+
+#### 5.3.4 分发配置文件
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} "mkdir -p ${PROJECT_DIR}/server/ ${LOG_DIR}"
+    scp ${TEMP_DIR}/pki/apiserver*.pem ${MasterArray[$NODE]}:${PROJECT_DIR}/pki/
+    scp ${TEMP_DIR}/pki/front-proxy*.pem ${MasterArray[$NODE]}:${PROJECT_DIR}/pki/
+    scp ${TEMP_DIR}/cfg/encryption-config.yaml   ${MasterArray[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/cfg/kube-apiserver   ${MasterArray[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/cfg/kubectl.kubeconfig   ${MasterArray[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/systemd/kube-apiserver.service ${MasterArray[$NODE]}:/usr/lib/systemd/system/kube-apiserver.service
+    ssh ${MasterArray[$NODE]} "sed -i "s@##PUBLIC_IP##@${MasterArray[$NODE]}@g"  ${PROJECT_DIR}/server/kube-apiserver"
+    ssh ${MasterArray[$NODE]} 'systemctl daemon-reload'
+done
+````
+
+#### 5.3.5 启动 api-server
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'systemctl enable --now kube-apiserver' &
+done
+wait
+````
+
+### 5.3.6 检查kube-apiserve服务
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'netstat -ptln | grep kube-apiserve' 
+done
+````
+
+- 集群状态
+
+````
+kubectl cluster-info
+````
+
+#### 5.3.7 授予kubernetes证书访问kubelet api权限
+
+````
+kubectl create clusterrolebinding kube-apiserver:kubelet-apis --clusterrole=system:kubelet-api-admin --user kubernetes
+````
+
+### 5.4 部署 controllers-manager 组件
+
+- 该集群包含 3 个节点，启动后将通过竞争选举机制产生一个 leader 节点，其它节点为阻塞状态。当 leader 节点不可用后，剩余节点将再次进行选举产生新的 leader 节点，从而保证服务的可用性。
+
+  为保证通信安全，本文档先生成 x509 证书和私钥，kube-controller-manager 在如下两种情况下使用该证书：
+
+  - 与 kube-apiserver 的安全端口通信时;
+  - 在安全端口(https，10252) 输出 prometheus 格式的 metrics；
+
+#### 5.4.1 创建kube-controller-manager证书请求
+
+````
+cd ${TEMP_DIR}/pki/
+sed -i '/"hosts":/r '<(xargs -n1<<<${MasterArray[@]} | sort | sed 's#^\w.*\+#      "&",#') kube-controller-manager-csr.json
+````
+
+- 生成证书和私钥
+
+````
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
+````
+
+- 分发证书
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} "mkdir -p ${PROJECT_DIR}/server/ ${LOG_DIR}"
+    scp ${TEMP_DIR}/pki/kube-controller-manager*.pem ${MasterArray[$NODE]}:${PROJECT_DIR}/pki/
+done
+````
+
+#### 5.4.2 创建 kube-controller-manager.kubeconfig 文件
+
+````
+cd ${TEMP_DIR}/cfg/
+kubectl config set-cluster kubernetes \
+  --certificate-authority=${PROJECT_DIR}/pki/ca.pem \
+  --embed-certs=true \
+  --server=${KUBE_APISERVER} \
+  --kubeconfig=kube-controller-manager.kubeconfig
+
+kubectl config set-credentials system:kube-controller-manager \
+  --client-certificate=${PROJECT_DIR}/pki/kube-controller-manager.pem \
+  --client-key=${PROJECT_DIR}/pki/kube-controller-manager-key.pem \
+  --embed-certs=true \
+  --kubeconfig=kube-controller-manager.kubeconfig
+
+kubectl config set-context system:kube-controller-manager \
+  --cluster=kubernetes \
+  --user=system:kube-controller-manager \
+  --kubeconfig=kube-controller-manager.kubeconfig
+
+kubectl config use-context system:kube-controller-manager --kubeconfig=kube-controller-manager.kubeconfig
+````
+
+#### 5.4.3 controller-manager 配置文件
+
+````
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/cfg/kube-controller-manager
+sed -i "s@##SERVICE_CIDR##@${SERVICE_CIDR}@g" ${TEMP_DIR}/cfg/kube-controller-manager
+sed -i "s@##LOG_DIR##@${LOG_DIR}@g" ${TEMP_DIR}/cfg/kube-controller-manager
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/systemd/kube-controller-manager.service
+````
+
+#### 5.4.4 分发配置文件
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} "mkdir -p ${PROJECT_DIR}/server/ ${LOG_DIR}"
+    scp ${TEMP_DIR}/cfg/kube-controller-manager.kubeconfig   ${MasterArray[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/cfg/kube-controller-manager   ${MasterArray[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/systemd/kube-controller-manager.service ${MasterArray[$NODE]}:/usr/lib/systemd/system/kube-controller-manager.service
+    ssh ${MasterArray[$NODE]} 'systemctl daemon-reload'
+done
+````
+
+#### 5.4.5 启动kube-controller-manager服务
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'systemctl enable --now kube-controller-manager.service' &
+done
+wait
+````
+
+#### 5.4.6 检查kube-controller-manage服务
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'netstat -ptln | grep kube-controll' 
+done
+````
+
+- #### 查看当前kube-controller-manager的leader
+
+````
+kubectl get endpoints kube-controller-manager --namespace=kube-system  -o yaml
+````
+
+
+
+###  5.5 部署kube-scheduler组件
+
+- 该集群包含 3 个节点，启动后将通过竞争选举机制产生一个 leader 节点，其它节点为阻塞状态。当 leader 节点不可用后，剩余节点将再次进行选举产生新的 leader 节点，从而保证服务的可用性。
+- 为保证通信安全，本文档先生成 x509 证书和私钥，kube-scheduler 在如下两种情况下使用该证书：
+  - 与 kube-apiserver 的安全端口通信;
+  - 在安全端口(https，10251) 输出 prometheus 格式的 metrics；
+
+#### 5.5.1 创建kube-scheduler证书请求
+
+````
+cd ${TEMP_DIR}/pki/
+sed -i '/"hosts":/r '<(xargs -n1<<<${MasterArray[@]} | sort | sed 's#^\w.*\+#      "&",#') kube-scheduler-csr.json
+````
+
+- 生成证书和私钥
+
+````
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes  kube-scheduler-csr.json | cfssljson -bare  kube-scheduler
+````
+
+- 分发证书
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} "mkdir -p ${PROJECT_DIR}/server/ ${LOG_DIR}"
+    scp ${TEMP_DIR}/pki/kube-scheduler*.pem ${MasterArray[$NODE]}:${PROJECT_DIR}/pki/
+done
+````
+
+#### 5.5.2 创建 kube-scheduler.kubeconfig 文件
+
+````
+cd ${TEMP_DIR}/cfg/
+kubectl config set-cluster kubernetes \
+  --certificate-authority=${PROJECT_DIR}/pki/ca.pem \
+  --embed-certs=true \
+  --server=${KUBE_APISERVER} \
+  --kubeconfig=kube-scheduler.kubeconfig
+
+kubectl config set-credentials system:kube-scheduler \
+  --client-certificate=${PROJECT_DIR}/pki/kube-scheduler.pem \
+  --client-key=${PROJECT_DIR}/pki/kube-scheduler-key.pem \
+  --embed-certs=true \
+  --kubeconfig=kube-scheduler.kubeconfig
+
+kubectl config set-context system:kube-scheduler \
+  --cluster=kubernetes \
+  --user=system:kube-scheduler \
+  --kubeconfig=kube-scheduler.kubeconfig
+
+kubectl config use-context system:kube-scheduler --kubeconfig=kube-scheduler.kubeconfig
+````
+
+#### 5.5.3 kube-scheduler 配置文件
+
+````
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/cfg/kube-scheduler
+sed -i "s@##LOG_DIR##@${LOG_DIR}@g" ${TEMP_DIR}/cfg/kube-scheduler
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/systemd/kube-scheduler.service
+````
+
+#### 5.5.4 分发证书与配置文件
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} "mkdir -p ${PROJECT_DIR}/server/ ${LOG_DIR}"
+    scp ${TEMP_DIR}/cfg/kube-scheduler   ${MasterArray[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/cfg/kube-scheduler.kubeconfig   ${MasterArray[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/systemd/kube-scheduler.service ${MasterArray[$NODE]}:/usr/lib/systemd/system/kube-scheduler.service
+    ssh ${MasterArray[$NODE]} 'systemctl daemon-reload'
+done
+````
+
+#### 5.5.5 启动kube-scheduler服务
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'systemctl enable --now kube-scheduler.service' &
+done
+wait
+````
+
+#### 5.5.6 检查kube-scheduler服务
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    ssh ${MasterArray[$NODE]} 'netstat -ptln | grep kube-schedule' 
+done
+````
+
+- #### 查看当前kube-scheduler的leader
+
+````
+kubectl get endpoints kube-scheduler --namespace=kube-system  -o yaml
+````
+
+### 5.6 在所有master节点上验证功能是否正常
+
+````
+# kubectl get componentstatuses
+NAME                 STATUS      MESSAGE                                                                                                                       
+controller-manager   Healthy     ok
+scheduler            Healthy     ok
+etcd-2               Healthy     {"health":"true"}
+etcd-0               Healthy     {"health":"true"}
+etcd-1               Healthy     {"health":"true"}
+````
+
+## 6， 部署 kubernetes node节点
+
+### 6.1  部署kubelet组件
+
+- kublet 运行在每个 worker 节点上，接收 kube-apiserver 发送的请求，管理 Pod 容器，执行交互式命令，如 exec、run、logs 等。
+- kublet 启动时自动向 kube-apiserver 注册节点信息，内置的 cadvisor 统计和监控节点的资源使用情况。
+- 为确保安全，本文档只开启接收 https 请求的安全端口，对请求进行认证和授权，拒绝未授权的访问(如 apiserver、heapster)。
+
+#### 6.1.1 分发 kubelet 命令文件
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    scp ${TEMP_DIR}/bin/kube{let,-proxy} ${AllNode[$NODE]}:/usr/local/bin/
+    ssh ${AllNode[$NODE]} "yum install -y  wget conntrack ipvsadm ipset jq iptables curl sysstat libseccomp"
+done
+````
+
+#### 6.1.2 创建kubelet bootstrap kubeconfig文件 （k8s-master1上执行）
+
+````
+#创建 token
+cd ${TEMP_DIR}/cfg/
+export BOOTSTRAP_TOKEN=$(kubeadm token create \
+  --description kubelet-bootstrap-token \
+  --groups system:bootstrappers:k8s-bootstrap \
+  --kubeconfig ~/.kube/config)
+
+# 设置集群参数
+kubectl config set-cluster kubernetes \
+  --certificate-authority=${PROJECT_DIR}/pki/ca.pem \
+  --embed-certs=true \
+  --server=${KUBE_APISERVER} \
+  --kubeconfig=kubelet-bootstrap.kubeconfig
+
+# 设置客户端认证参数
+kubectl config set-credentials kubelet-bootstrap \
+  --token=${BOOTSTRAP_TOKEN} \
+  --kubeconfig=kubelet-bootstrap.kubeconfig
+
+# 设置上下文参数
+kubectl config set-context default \
+  --cluster=kubernetes \
+  --user=kubelet-bootstrap \
+  --kubeconfig=kubelet-bootstrap.kubeconfig
+
+# 设置默认上下文
+kubectl config use-context default --kubeconfig=kubelet-bootstrap.kubeconfig
+````
+
+- 证书中写入 Token 而非证书，证书后续由 controller-manager 创建。
+
+- 创建的 token 有效期为 1 天，超期后将不能再被使用，且会被 kube-controller-manager 的 tokencleaner 清理(如果启用该 controller 的话)；
+- kube-apiserver 接收 kubelet 的 bootstrap token 后，将请求的 user 设置为 system:bootstrap:，group 设置为 system:bootstrappers；
+- 查看 kubeadm 为各节点创建的 token ````  kubeadm token list --kubeconfig ~/.kube/config ````
+
+#### 6.1.3 创建 kubelet 参数配置文件
+
+````
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/cfg/kubelet-config.yaml
+sed -i "s@##CLUSTER_DNS_DOMAIN##@${CLUSTER_DNS_DOMAIN}@g" ${TEMP_DIR}/cfg/kubelet-config.yaml
+sed -i "s@##CLUSTER_DNS_SVC_IP##@${CLUSTER_DNS_SVC_IP}@g" ${TEMP_DIR}/cfg/kubelet-config.yaml
+sed -i "s@##CLUSTER_CIDR##@${CLUSTER_CIDR}@g" ${TEMP_DIR}/cfg/kubelet-config.yaml
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/systemd/kubelet.service
+sed -i "s@##WORK_DIR##@${WORK_DIR}@g" ${TEMP_DIR}/systemd/kubelet.service
+sed -i "s@##DOCKER_REGISTRY##@${DOCKER_REGISTRY}@g" ${TEMP_DIR}/systemd/kubelet.service
+````
+
+#### 6.1.4 分发配置文件与kubelet-bootstrap.kubeconfig
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} "mkdir -p ${PROJECT_DIR}/{server,pki}/ ${WORK_DIR}/kubelet/logs "
+    scp ${TEMP_DIR}/pki/ca.pem   ${AllNode[$NODE]}:${PROJECT_DIR}/pki/
+    scp ${TEMP_DIR}/cfg/kubelet-bootstrap.kubeconfig   ${AllNode[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/cfg/kubelet-config.yaml   ${AllNode[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/systemd/kubelet.service ${AllNode[$NODE]}:/usr/lib/systemd/system/kubelet.service
+    ssh ${AllNode[$NODE]} "sed -i "s@##PUBLIC_IP##@${AllNode[$NODE]}@g"  ${PROJECT_DIR}/server/kubelet-config.yaml"   
+    ssh ${AllNode[$NODE]} "sed -i "s@##NODE_NAME##@${NODE}@g"  /usr/lib/systemd/system/kubelet.service"  
+    ssh ${AllNode[$NODE]} 'systemctl daemon-reload'
+done
+````
+
+#### 6.1.5 创建user和group的CSR权限，不创建kubelet会启动失败
+
+````
+kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --group=system:bootstrappers
+````
+
+#### 6.1.7  启动 kubelet 服务 
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} 'systemctl enable --now kubelet.service' &
+done
+wait
+````
+
+- 检查服务端口
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} 'systemctl status kubelet.service | grep active'
+    ssh ${AllNode[$NODE]} 'netstat -lntup | grep  kubele'
+done
+````
+
+
+- 10248: healthz http 服务；
+- 10250: https 服务，访问该端口时需要认证和授权（即使访问 /healthz 也需要）；
+- 未开启只读端口 10255；
+- 从 K8S v1.10 开始，去除了 –cadvisor-port 参数（默认 4194 端口），不支持访问 cAdvisor UI & API
+- kubelet 启动后使用 –bootstrap-kubeconfig 向 kube-apiserver 发送 CSR 请求，当这个CSR 被 approve 后，kube-controller-manager 为 kubelet 创建 TLS 客户端证书、私钥和 –kubeletconfig 文件。 注意：kube-controller-manager 需要配置 –cluster-signing-cert-file 和 –cluster-signing-key-file 参数，才会为 TLS Bootstrap 创建证书和私钥。
+-  此时kubelet的进程存在，但是监听端口还未启动，需要进行下面步骤！
+
+#### 6.1.8 自动approve CSR请求
+
+- 创建三个ClusterRoleBinding，分别用于自动approve client、renew client、renew server证书
+
+````
+for NODE in "${!MasterArray[@]}"; do
+    echo "--- $NODE ${MasterArray[$NODE]} ---"
+    scp ${TEMP_DIR}/cfg/csr-crb.yaml   ${MasterArray[$NODE]}:${PROJECT_DIR}/server/
+done
+kubectl apply -f ${PROJECT_DIR}/server/csr-crb.yaml
+````
+
+- auto-approve-csrs-for-group 自动approve node的第一次CSR，注意第一次CSR时，请求的Group为system:bootstrappers
+- node-client-cert-renewal 自动approve node后续过期的client证书，自动生成的证书Group为system:nodes
+- node-server-cert-renewal 自动approve node后续过期的server证书，自动生成的证书Group
+
+#### 6.1.9 **手动approve server cert csr**
+
+- 基于安全考虑，CSR approving controllers不会自动approve kubelet server证书签名请求，需要手动approve
+
+````
+kubectl get csr | grep Pending | awk '{print $1}' | xargs kubectl certificate approve
+````
+
+#### 6.1.10 **bear token认证和授权**
+
+- 创建一个ServiceAccount，将它和ClusterRole system:kubelet-api-admin绑定，从而具有调用kubelet API的权限
+
+````
+kubectl create sa kubelet-api-test
+kubectl create clusterrolebinding kubelet-api-test --clusterrole=system:kubelet-api-admin --serviceaccount=default:kubelet-api-test
+SECRET=$(kubectl get secrets | grep kubelet-api-test | awk '{print $1}')
+TOKEN=$(kubectl describe secret ${SECRET} | grep -E '^token' | awk '{print $2}')
+echo ${TOKEN}
+````
+
+#### 6.1.11 查看kubelet状态
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} 'netstat -ptln | grep kubelet' 
+done
+
+# 查看csr请求状态
+kubectl get csr
+
+# 查看节点信息
+kubectl get node
+````
+
+
+
+### 6.2 部署 kube-proxy 组件
+
+- kube-proxy运行在所有worker节点上，它监听apiserver中service和endpoint的变化情况，创建路由规则提供服务IP和负载均衡功能。这里使用ipvs模式的kube-proxy进行部署
+- 在各个节点需要安装ipvsadm和ipset命令，加载ip_vs内核模块
+
+#### 6.2.1 创建kube-proxy 证书
+
+- 生成证书
+
+````
+cd ${TEMP_DIR}/pki/
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes kube-proxy-csr.json | cfssljson -bare kube-proxy
+````
+
+- 分发证书
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} "mkdir -p ${PROJECT_DIR}/{server,pki}/ ${LOG_DIR}"
+    scp ${TEMP_DIR}/pki/kube-proxy*.pem ${AllNode[$NODE]}:${PROJECT_DIR}/pki/
+done
+````
+
+#### 6.2.2 创建和分发kubeconfig文件
+
+````
+cd ${TEMP_DIR}/cfg/
+kubectl config set-cluster kubernetes \
+  --certificate-authority=${PROJECT_DIR}/pki/ca.pem \
+  --embed-certs=true \
+  --server=${KUBE_APISERVER} \
+  --kubeconfig=kube-proxy.kubeconfig
+
+kubectl config set-credentials kube-proxy \
+  --client-certificate=${PROJECT_DIR}/pki/kube-proxy.pem \
+  --client-key=${PROJECT_DIR}/pki/kube-proxy-key.pem \
+  --embed-certs=true \
+  --kubeconfig=kube-proxy.kubeconfig
+
+kubectl config set-context default \
+  --cluster=kubernetes \
+  --user=kube-proxy \
+  --kubeconfig=kube-proxy.kubeconfig
+
+kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
+````
+
+- -embed-certs=true：将 ca.pem 和 admin.pem 证书内容嵌入到生成的 kubectl-proxy.kubeconfig 文件中(不加时，写入的是证书文件路径)
+
+#### 6.2.3 创建 kube-proxy systemd unit 文件
+
+- 从 v1.10 开始，kube-proxy 部分参数可以配置文件中配置。可以使用 --write-config-to 选项生成该配置文件，或者参考 kubeproxyconfig 的类型定义源文件 ：https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/apis/kubeproxyconfig/types.go
+
+````
+sed -i "s@##PROJECT_DIR##@${PROJECT_DIR}@g" ${TEMP_DIR}/systemd/kube-proxy.service
+sed -i "s@##WORK_DIR##@${WORK_DIR}@g" ${TEMP_DIR}/systemd/kube-proxy.service
+sed -i "s@##CLUSTER_CIDR##@${CLUSTER_CIDR}@g" ${TEMP_DIR}/systemd/kube-proxy.service
+````
+
+- bind-address: 监听地址；
+- clientConnection.kubeconfig: 连接 apiserver 的 kubeconfig 文件；
+- clusterCIDR: kube-proxy 根据 --cluster-cidr 判断集群内部和外部流量，指定 --cluster-cidr 或 --masquerade-all选项后 kube-proxy 才会对访问 Service IP 的请求做 SNAT；
+- hostname-override: 参数值必须与 kubelet 的值一致，否则 kube-proxy 启动后会找不到该 Node，从而不会创建任何 ipvs 规则；
+- proxy-mode: 使用 ipvs 模式；
+- 修改改对应主机的信息。其中clusterc idr为docker0网络地址。
+
+#### 6.2.4 分发配置文件
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} "mkdir -p ${PROJECT_DIR}/{server,pki}/ ${WORK_DIR}/kube-proxy/logs "
+    scp ${TEMP_DIR}/cfg/kube-proxy.kubeconfig   ${AllNode[$NODE]}:${PROJECT_DIR}/server/
+    scp ${TEMP_DIR}/systemd/kube-proxy.service ${AllNode[$NODE]}:/usr/lib/systemd/system/kube-proxy.service
+    ssh ${AllNode[$NODE]} "sed -i "s@##PUBLIC_IP##@${AllNode[$NODE]}@g"  /usr/lib/systemd/system/kube-proxy.service"   
+    ssh ${AllNode[$NODE]} "sed -i "s@##NODE_NAME##@${NODE}@g"  /usr/lib/systemd/system/kube-proxy.service"  
+    ssh ${AllNode[$NODE]} 'systemctl daemon-reload'
+done
+````
+
+#### 6.2.5 启动kube-proxy服务
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} 'systemctl enable --now kube-proxy.service' &
+done
+wait
+````
+
+#### 6.2.6 查看 kube-proxy 状态
+
+````
+for NODE in "${!AllNode[@]}"; do
+    echo "--- $NODE ${AllNode[$NODE]} ---"
+    ssh ${AllNode[$NODE]} 'netstat -ptln | grep kube-proxy' 
+done
+````
+
+
+
+## 7,其他组件安装部署
+
+### 7.1 calico安装
+
+#### 7.1.1 配置文件
+
+````
+cp -a ${TEMP_DIR}/calico ${PROJECT_DIR}/
+cd ${PROJECT_DIR}/calico/
+````
+
+#### 7.1.2 配置 calico 文件
+
+- etcd 地址
+
+````
+sed -i "s#.*etcd_endpoints:.*#  etcd_endpoints: \"${ETCD_SVC}\"#g" calico.yaml
+sed -i "s#__ETCD_ENDPOINTS__#${ETCD_SVC}#g" calico.yaml
+````
+
+- etcd 证书
+
+````
+ETCD_CERT=`cat ${PROJECT_DIR}/pki/etcd.pem | base64 | tr -d '\n'`
+ETCD_KEY=`cat ${PROJECT_DIR}/pki/etcd-key.pem | base64 | tr -d '\n'`
+ETCD_CA=`cat ${PROJECT_DIR}/pki/ca.pem | base64 | tr -d '\n'`
+
+sed -i "s#.*etcd-cert:.*#  etcd-cert: ${ETCD_CERT}#g" calico.yaml
+sed -i "s#.*etcd-key:.*#  etcd-key: ${ETCD_KEY}#g" calico.yaml
+sed -i "s#.*etcd-ca:.*#  etcd-ca: ${ETCD_CA}#g" calico.yaml
+
+sed -i 's#.*etcd_ca:.*#  etcd_ca: "/calico-secrets/etcd-ca"#g' calico.yaml
+sed -i 's#.*etcd_cert:.*#  etcd_cert: "/calico-secrets/etcd-cert"#g' calico.yaml
+sed -i 's#.*etcd_key:.*#  etcd_key: "/calico-secrets/etcd-key"#g' calico.yaml
+
+sed -i "s#__ETCD_KEY_FILE__#${PROJECT_DIR}/pki/etcd-key.pem#g" calico.yaml
+sed -i "s#__ETCD_CERT_FILE__#${PROJECT_DIR}/pki/etcd.pem#g" calico.yaml
+sed -i "s#__ETCD_CA_CERT_FILE__#${PROJECT_DIR}/pki/ca.pem#g" calico.yaml
+sed -i "s#__KUBECONFIG_FILEPATH__#/etc/cni/net.d/calico-kubeconfig#g" calico.yaml
+````
+
+- 配置calico bgp 并且修改ip cidr:
+
+````
+sed -i "/CLUSTER_TYPE/{n;s@##IFACE##@${IFACE}@g}" calico.yaml
+sed -i '/CALICO_IPV4POOL_IPIP/{n;s/Always/off/g}' calico.yaml
+sed -i "/CALICO_IPV4POOL_CIDR/{n;s@192.168.0.0/16@${CLUSTER_CIDR}@g}" calico.yaml
+sed -i "s#image: calico#image: ${DOCKER_REGISTRY}/quay.io/calico#g" calico.yaml
+````
+
+- 配置 caicoctl
+
+````
+sed -i "s#image: quay.io#image: ${DOCKER_REGISTRY}/quay.io#g" calicoctl.yaml
+````
+
+#### 7.1.3 部署 calico
+
+````
+kubectl apply -f ${PROJECT_DIR}/calico
+````
+
+
+
+### 7.2，部署kubernetes DNS
+
+#### 7.2.1 配置文件
+
+````
+cp -a ${TEMP_DIR}/coredns ${PROJECT_DIR}/
+cd ${PROJECT_DIR}/coredns/
+````
+
+#### 7.2.2 修改配置文件
+
+````
+sed -i "s#kubernetes __PILLAR__DNS__DOMAIN__#kubernetes ${CLUSTER_DNS_DOMAIN}#g" coredns.yaml
+sed -i "s#clusterIP: __PILLAR__DNS__SERVER__#clusterIP: ${CLUSTER_DNS_SVC_IP}#g" coredns.yaml
+sed -i "s#image: k8s.gcr.io#image: ${DOCKER_REGISTRY}/coredns#g" coredns.yaml
+````
+
+#### 7.2.3 部署coreDNS
+
+````
+kubectl apply -f ${PROJECT_DIR}/coredns/
+````
+
+#### 7.2.4 验证 dns
+
+````
+cat > ${PROJECT_DIR}/buxybox.yaml <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+spec:
+  containers:
+  - name: busybox
+    image: ${DOCKER_REGISTRY}/busybox:1.28.3
+    command:
+      - sleep
+      - "3600"
+    imagePullPolicy: IfNotPresent
+  restartPolicy: Always
+EOF
+````
+
+- 使用 nslookup 查看
+
+````
+# kubectl exec -ti busybox -- nslookup kubernetes
+Server:    10.254.0.2
+Address 1: 10.254.0.2 kube-dns.kube-system.svc.cluster.local
+
+Name:      kubernetes
+Address 1: 10.254.0.1 kubernetes.default.svc.cluster.local
+````
+
+
+
+### 7.3 部署 metrics
+
+### 7.3.1 metrics 配置文件
+
+- 使用官方配置文件
+
+````
+cp -a ${TEMP_DIR}/metrics-server ${PROJECT_DIR}/
+cd ${PROJECT_DIR}/metrics-server
+````
+
+#### 7.3.2 更改配置文件
+
+````
+sed -i "s#image: k8s.gcr.io#image: ${DOCKER_REGISTRY}/registry.cn-hangzhou.aliyuncs.com/google_containers#g" metrics-server-deployment.yaml
+````
+
+#### 7.3.3 配置权限
+
+````
+kubectl create clusterrolebinding cluster-front-proxy --clusterrole=cluster-admin --user=system:front-proxy
+````
+
+#### 7.3.3 部署 metrics
+
+````
+kubectl apply -f ${PROJECT_DIR}/metrics-server
+````
+
+### 7.4 部署 dashboard
+
+#### 7.4.1 配置文件
+
+````
+cp -a ${TEMP_DIR}/dashboard ${PROJECT_DIR}/
+cd ${PROJECT_DIR}/dashboard
+````
+
+#### 7.4.2 创建dashboard证书
+
+````
+cd ${PROJECT_DIR}/pki/
+#生成证书
+dashboard_ip=$(echo "$VIP,${MasterArray[@]}" | tr " " ",")
+openssl genrsa -out dashboard.key 2048 
+openssl req -days 3650 -new -out dashboard.csr -key dashboard.key -subj "/CN=${dashboard_ip}"
+openssl x509 -req -in dashboard.csr -signkey dashboard.key -out dashboard.crt 
+#创建新的证书secret
+kubectl create secret generic kubernetes-dashboard-certs --from-file="${PROJECT_DIR}/pki/dashboard.key,${PROJECT_DIR}/pki/dashboard.crt" -n kube-system
+````
+
+#### 7.4.3 修改配置文件
+
+````
+cd ${PROJECT_DIR}/dashboard
+sed -i "s#image: k8s.gcr.io#image: ${DOCKER_REGISTRY}/registry.cn-hangzhou.aliyuncs.com/google_containers#g" kubernetes-dashboard.yaml
+````
+
+#### 7.4.4 部署 dashboard
+
+````
+kubectl apply -f ${PROJECT_DIR}/dashboard
+````
+
+#### 7.4.5 获取token
+
+````
+kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep user-admin | awk '{print $1}')
+````
+
+### 7.5 部署 Nginx ingress
+
+#### 7.5.1 配置文件
+
+````
+cp -a ${TEMP_DIR}/ingress-nginx ${PROJECT_DIR}/
+cd ${PROJECT_DIR}/ingress-nginx
+````
+
+#### 7.5.2 修改配置文件
+
+````
+cd ${PROJECT_DIR}/ingress-nginx
+sed -i "s#image: quay.io#image: ${DOCKER_REGISTRY}/quay.io#g"  mandatory.yaml
+````
+
+#### 7.5.3 部署 nginx-ingress
+
+````
+cd ${PROJECT_DIR}/ingress-nginx
+kubectl create -f mandatory.yaml
+````
 
-[category](#category)
-
-#### nginx load balance settings
-
-- on all master nodes: start up nginx load balance
-
-```sh
-# use docker-compose to start up nginx load balance
-$ docker-compose --file=/root/nginx-lb/docker-compose.yaml up -d
-$ docker-compose --file=/root/nginx-lb/docker-compose.yaml ps
-
-# check nginx load balance
-$ curl -k https://k8s-master-lb:16443
-```
-
----
-
-[category](#category)
-
-#### kube-proxy HA settings
-
-- on any master nodes: set kube-proxy server settings, make sure this settings use the keepalived virtual IP and nginx load balancer port (here is: https://192.168.20.10:16443)
-
-```sh
-$ kubectl edit -n kube-system configmap/kube-proxy
-    server: https://192.168.20.10:16443
-```
-
-- on any master nodes: restart kube-proxy pods
-
-```sh
-# find all kube-proxy pods
-$ kubectl get pods --all-namespaces -o wide | grep proxy
-
-# delete and restart all kube-proxy pods
-$ kubectl delete pod -n kube-system kube-proxy-XXX
-```
-
----
-
-[category](#category)
-
-#### high availiability verify
-
-- on any master nodes: check cluster running status
-
-```sh
-# check kubernetes nodes status
-$ kubectl get nodes
-NAME           STATUS    ROLES     AGE       VERSION
-k8s-master01   Ready     master    1h        v1.11.1
-k8s-master02   Ready     master    58m       v1.11.1
-k8s-master03   Ready     master    55m       v1.11.1
-
-# check kube-system pods running status
-$ kubectl get pods -n kube-system -o wide
-NAME                                   READY     STATUS    RESTARTS   AGE       IP              NODE
-calico-node-nxskr                      2/2       Running   0          46m       192.168.20.22   k8s-master03
-calico-node-xv5xt                      2/2       Running   0          46m       192.168.20.20   k8s-master01
-calico-node-zsmgp                      2/2       Running   0          46m       192.168.20.21   k8s-master02
-coredns-78fcdf6894-kfzc7               1/1       Running   0          1h        172.168.2.3     k8s-master03
-coredns-78fcdf6894-t957l               1/1       Running   0          46m       172.168.1.2     k8s-master02
-etcd-k8s-master01                      1/1       Running   0          1h        192.168.20.20   k8s-master01
-etcd-k8s-master02                      1/1       Running   0          58m       192.168.20.21   k8s-master02
-etcd-k8s-master03                      1/1       Running   0          54m       192.168.20.22   k8s-master03
-kube-apiserver-k8s-master01            1/1       Running   0          52m       192.168.20.20   k8s-master01
-kube-apiserver-k8s-master02            1/1       Running   0          52m       192.168.20.21   k8s-master02
-kube-apiserver-k8s-master03            1/1       Running   0          51m       192.168.20.22   k8s-master03
-kube-controller-manager-k8s-master01   1/1       Running   0          34m       192.168.20.20   k8s-master01
-kube-controller-manager-k8s-master02   1/1       Running   0          33m       192.168.20.21   k8s-master02
-kube-controller-manager-k8s-master03   1/1       Running   0          33m       192.168.20.22   k8s-master03
-kube-proxy-g9749                       1/1       Running   0          36m       192.168.20.22   k8s-master03
-kube-proxy-lhzhb                       1/1       Running   0          35m       192.168.20.20   k8s-master01
-kube-proxy-x8jwt                       1/1       Running   0          36m       192.168.20.21   k8s-master02
-kube-scheduler-k8s-master01            1/1       Running   1          1h        192.168.20.20   k8s-master01
-kube-scheduler-k8s-master02            1/1       Running   0          57m       192.168.20.21   k8s-master02
-kube-scheduler-k8s-master03            1/1       Running   1          54m       192.168.20.22   k8s-master03
-```
-
----
-
-[category](#category)
-
-#### kubernetes addons installation
-
-- on any master nodes: enable master node pod schedulable
-
-```sh
-$ kubectl taint nodes --all node-role.kubernetes.io/master-
-```
-
-- on any master nodes: install metrics-server, after v1.11.0 heapster is deprecated for performance data collection, it use metrics-server
-
-```sh
-$ kubectl apply -f metrics-server/
-
-# wait for 5 minutes, use kubectl top to check the pod performance usage
-$ kubectl top pods -n kube-system
-NAME                                    CPU(cores)   MEMORY(bytes)
-calico-node-wkstv                       47m          113Mi
-calico-node-x2sn5                       36m          104Mi
-calico-node-xnh6s                       32m          106Mi
-coredns-78fcdf6894-2xc6s                14m          30Mi
-coredns-78fcdf6894-rk6ch                10m          22Mi
-kube-apiserver-k8s-master01             163m         816Mi
-kube-apiserver-k8s-master02             79m          617Mi
-kube-apiserver-k8s-master03             73m          614Mi
-kube-controller-manager-k8s-master01    52m          141Mi
-kube-controller-manager-k8s-master02    0m           14Mi
-kube-controller-manager-k8s-master03    0m           13Mi
-kube-proxy-269t2                        4m           21Mi
-kube-proxy-6jc8n                        9m           37Mi
-kube-proxy-7n8xb                        9m           39Mi
-kube-scheduler-k8s-master01             20m          25Mi
-kube-scheduler-k8s-master02             15m          19Mi
-kube-scheduler-k8s-master03             15m          19Mi
-metrics-server-77b77f5fc6-jm8t6         3m           43Mi
-```
-
-- on any master nodes: install heapster, after v1.11.0 heapster is deprecated for performance data collection, it use metrics-server. But kube-dashboard use heapster to display performance info, so we install it.
-
-```sh
-# install heapster, wait for 5 minutes
-$ kubectl apply -f heapster/
-```
-
-- on any master nodes: install kube-dashboard
-
-```sh
-# install kube-dashboard
-$ kubectl apply -f dashboard/
-```
-
-> after install, open kube-dashboard in web browser, it need to login with token: https://k8s-master-lb:30000/
-
-![dashboard-login](images/dashboard-login.png)
-
-- on any master nodes: get kube-dashboard login token
-
-```sh
-# get kube-dashboard login token
-$ kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep admin-user | awk '{print $1}')
-```
-
-> login to kube-dashboard, you can see all pods performance metrics
-
-![dashboard](images/dashboard.png)
-
-- on any master nodes: install traefik
-
-```sh
-# create k8s-master-lb domain certificate
-$ openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -subj "/CN=k8s-master-lb"
-
-# create kubernetes secret
-kubectl -n kube-system create secret generic traefik-cert --from-file=tls.key --from-file=tls.crt
-
-# install traefik
-$ kubectl apply -f traefik/
-```
-
-> after install use web browser to open traefik admin webUI: http://k8s-master-lb:30011/
-
-![traefik](images/traefik.png)
-
-- on any master nodes: install istio
-
-```sh
-# install istio
-$ kubectl apply -f istio/
-
-# check all istio pods
-$ kubectl get pods -n istio-system
-NAME                                        READY     STATUS      RESTARTS   AGE
-grafana-69c856fc69-jbx49                    1/1       Running     1          21m
-istio-citadel-7c4fc8957b-vdbhp              1/1       Running     1          21m
-istio-cleanup-secrets-5g95n                 0/1       Completed   0          21m
-istio-egressgateway-64674bd988-44fg8        1/1       Running     0          18m
-istio-egressgateway-64674bd988-dgvfm        1/1       Running     1          16m
-istio-egressgateway-64674bd988-fprtc        1/1       Running     0          18m
-istio-egressgateway-64674bd988-kl6pw        1/1       Running     3          16m
-istio-egressgateway-64674bd988-nphpk        1/1       Running     3          16m
-istio-galley-595b94cddf-c5ctw               1/1       Running     70         21m
-istio-grafana-post-install-nhs47            0/1       Completed   0          21m
-istio-ingressgateway-4vtk5                  1/1       Running     2          21m
-istio-ingressgateway-5rscp                  1/1       Running     3          21m
-istio-ingressgateway-6z95f                  1/1       Running     3          21m
-istio-policy-589977bff5-jx5fd               2/2       Running     3          21m
-istio-policy-589977bff5-n74q8               2/2       Running     3          21m
-istio-sidecar-injector-86c4d57d56-mfnbp     1/1       Running     39         21m
-istio-statsd-prom-bridge-5698d5798c-xdpp6   1/1       Running     1          21m
-istio-telemetry-85d6475bfd-8lvsm            2/2       Running     2          21m
-istio-telemetry-85d6475bfd-bfjsn            2/2       Running     2          21m
-istio-telemetry-85d6475bfd-d9ld9            2/2       Running     2          21m
-istio-tracing-bd5765b5b-cmszp               1/1       Running     1          21m
-prometheus-77c5fc7cd-zf7zr                  1/1       Running     1          21m
-servicegraph-6b99c87849-l6zm6               1/1       Running     1          21m
-```
-
-- on any master nodes: install prometheus
-
-```sh
-# install prometheus
-$ kubectl apply -f prometheus/
-```
-
-> after install, open prometheus admin webUI: http://k8s-master-lb:30013/
-
-![prometheus](images/prometheus.png)
-
-> open grafana admin webUI (user and password is`admin`): http://k8s-master-lb:30006/
-> after login, add prometheus datasource: http://k8s-master-lb:30006/datasources
-
-![grafana-datasource](images/grafana-datasource.png)
-
-> import dashboard: http://k8s-master-lb:30006/dashboard/import import all files under `heapster/grafana-dashboard` directory, dashboard `Kubernetes App Metrics`, `Kubernetes cluster monitoring (via Prometheus)`
-
-![grafana-import](images/grafana-import.png)
-
-> dashboard you imported:
-
-![grafana-cluster](images/grafana-cluster.png)
-
-![grafana-app](images/grafana-app.png)
-
----
-
-[category](#category)
-
-### workers join kubernetes cluster
-
-#### workers join HA cluster
-
-- on all worker nodes: join kubernetes cluster
-
-```sh
-$ kubeadm reset
-
-# use kubeadm to join the cluster, here we use the k8s-master01 apiserver address and port.
-$ kubeadm join 192.168.20.20:6443 --token ${YOUR_TOKEN} --discovery-token-ca-cert-hash sha256:${YOUR_DISCOVERY_TOKEN_CA_CERT_HASH}
-
-
-# set the `/etc/kubernetes/*.conf` server settings, make sure this settings use the keepalived virtual IP and nginx load balancer port (here is: https://192.168.20.10:16443)
-$ sed -i "s/192.168.20.20:6443/192.168.20.10:16443/g" /etc/kubernetes/bootstrap-kubelet.conf
-$ sed -i "s/192.168.20.20:6443/192.168.20.10:16443/g" /etc/kubernetes/kubelet.conf
-
-# restart docker and kubelet service
-$ systemctl restart docker kubelet
-```
-
-- on any master nodes: check all nodes status
-
-```sh
-$ kubectl get nodes
-NAME           STATUS    ROLES     AGE       VERSION
-k8s-master01   Ready     master    1h        v1.11.1
-k8s-master02   Ready     master    58m       v1.11.1
-k8s-master03   Ready     master    55m       v1.11.1
-k8s-node01     Ready     <none>    30m       v1.11.1
-k8s-node02     Ready     <none>    24m       v1.11.1
-k8s-node03     Ready     <none>    22m       v1.11.1
-k8s-node04     Ready     <none>    22m       v1.11.1
-k8s-node05     Ready     <none>    16m       v1.11.1
-k8s-node06     Ready     <none>    13m       v1.11.1
-k8s-node07     Ready     <none>    11m       v1.11.1
-k8s-node08     Ready     <none>    10m       v1.11.1
-```
-
----
-
-[category](#category)
-
-### verify kubernetes cluster installation
-
-#### verify kubernetes cluster high availiablity installation
-
-- NodePort testing
-
-```sh
-# create a nginx deployment, replicas=3
-$ kubectl run nginx --image=nginx --replicas=3 --port=80
-deployment "nginx" created
-
-# check nginx pods status
-$ kubectl get pods -l=run=nginx -o wide
-NAME                     READY     STATUS    RESTARTS   AGE       IP             NODE
-nginx-58b94844fd-jvlqh   1/1       Running   0          9s        172.168.7.2    k8s-node05
-nginx-58b94844fd-mkt72   1/1       Running   0          9s        172.168.9.2    k8s-node07
-nginx-58b94844fd-xhb8x   1/1       Running   0          9s        172.168.11.2   k8s-node09
-
-# create nginx NodePort service
-$ kubectl expose deployment nginx --type=NodePort --port=80
-service "nginx" exposed
-
-# check nginx service status
-$ kubectl get svc -l=run=nginx -o wide
-NAME      TYPE       CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE       SELECTOR
-nginx     NodePort   10.106.129.121   <none>        80:31443/TCP   7s        run=nginx
-
-# check nginx NodePort service accessibility
-$ curl k8s-master-lb:31443
-<!DOCTYPE html>
-<html>
-<head>
-<title>Welcome to nginx!</title>
-<style>
-    body {
-        width: 35em;
-        margin: 0 auto;
-        font-family: Tahoma, Verdana, Arial, sans-serif;
-    }
-</style>
-</head>
-<body>
-<h1>Welcome to nginx!</h1>
-<p>If you see this page, the nginx web server is successfully installed and
-working. Further configuration is required.</p>
-
-<p>For online documentation and support please refer to
-<a href="http://nginx.org/">nginx.org</a>.<br/>
-Commercial support is available at
-<a href="http://nginx.com/">nginx.com</a>.</p>
-
-<p><em>Thank you for using nginx.</em></p>
-</body>
-</html>
-```
-
-- pods connectivity testing
-
-```sh
-kubectl run nginx-client -ti --rm --image=alpine -- ash
-/ # wget -O - nginx
-Connecting to nginx (10.102.101.78:80)
-index.html           100% |*****************************************|   612   0:00:00 ETA
-
-<!DOCTYPE html>
-<html>
-<head>
-<title>Welcome to nginx!</title>
-<style>
-    body {
-        width: 35em;
-        margin: 0 auto;
-        font-family: Tahoma, Verdana, Arial, sans-serif;
-    }
-</style>
-</head>
-<body>
-<h1>Welcome to nginx!</h1>
-<p>If you see this page, the nginx web server is successfully installed and
-working. Further configuration is required.</p>
-
-<p>For online documentation and support please refer to
-<a href="http://nginx.org/">nginx.org</a>.<br/>
-Commercial support is available at
-<a href="http://nginx.com/">nginx.com</a>.</p>
-
-<p><em>Thank you for using nginx.</em></p>
-</body>
-</html>
-
-# remove all test nginx deployment and service
-kubectl delete deploy,svc nginx
-```
-
-- HPA testing
-
-```sh
-# create test nginx-server
-kubectl run nginx-server --requests=cpu=10m --image=nginx --port=80
-kubectl expose deployment nginx-server --port=80
-
-# create hpa
-kubectl autoscale deployment nginx-server --cpu-percent=10 --min=1 --max=10
-kubectl get hpa
-kubectl describe hpa nginx-server
-
-# increase nginx-server load
-kubectl run -ti --rm load-generator --image=busybox -- ash
-wget -q -O- http://nginx-server.default.svc.cluster.local > /dev/null
-while true; do wget -q -O- http://nginx-server.default.svc.cluster.local > /dev/null; done
-
-# it may take a few minutes to stabilize the number of replicas. Since the amount of load is not controlled in any way it may happen that the final number of replicas will differ from this example.
-
-kubectl get hpa -w
-
-# remove all test deployment service and HPA
-kubectl delete deploy,svc,hpa nginx-server
-```
-
----
-
-[category](#category)
-
-- now kubernetes high availiability cluster setup successfully 😃

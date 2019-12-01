@@ -1,0 +1,29 @@
+[Unit]
+Description=Kubernetes Kubelet
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=docker.service
+Requires=docker.service
+
+[Service]
+WorkingDirectory=##WORK_DIR##/kubelet
+ExecStart=/usr/local/bin/kubelet \
+  --bootstrap-kubeconfig=##PROJECT_DIR##/server/kubelet-bootstrap.kubeconfig \
+  --cert-dir=##PROJECT_DIR##/pki \
+  --kubeconfig=##PROJECT_DIR##/server/kubelet.kubeconfig \
+  --config=##PROJECT_DIR##/server/kubelet-config.yaml \
+  --network-plugin=cni \
+  --cni-conf-dir=/etc/cni/net.d \
+  --cni-bin-dir=/opt/cni/bin \
+  --container-runtime=docker \
+  --container-runtime-endpoint=unix:///var/run/dockershim.sock \
+  --hostname-override=##NODE_NAME## \
+  --pod-infra-container-image=##DOCKER_REGISTRY##/registry.cn-hangzhou.aliyuncs.com/google_containers/pause-amd64:3.1 \
+  --volume-plugin-dir=##WORK_DIR##/kubelet/kubelet-plugins/volume/exec/ \
+  --allow-privileged=true \
+  --alsologtostderr=true \
+  --logtostderr=false \
+  --log-dir=##WORK_DIR##/kubelet/logs \
+  --v=2
+
+[Install]
+WantedBy=multi-user.target

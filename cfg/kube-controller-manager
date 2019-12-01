@@ -1,0 +1,23 @@
+KUBE_CONTROLLER_MANAGER_OPTS="--profiling \
+  --bind-address=127.0.0.1 \
+  --kubeconfig=##PROJECT_DIR##/server/kube-controller-manager.kubeconfig \
+  --authentication-kubeconfig=##PROJECT_DIR##/server/kube-controller-manager.kubeconfig \
+  --service-cluster-ip-range=##SERVICE_CIDR## \
+  --cluster-name=kubernetes \
+  --cluster-signing-cert-file=##PROJECT_DIR##/pki/ca.pem \
+  --cluster-signing-key-file=##PROJECT_DIR##/pki/ca-key.pem \
+  --experimental-cluster-signing-duration=8760h \
+  --root-ca-file=##PROJECT_DIR##/pki/ca.pem \
+  --service-account-private-key-file=##PROJECT_DIR##/pki/ca-key.pem \
+  --leader-elect=true \
+  --feature-gates=RotateKubeletServerCertificate=true \
+  --controllers=*,bootstrapsigner,tokencleaner \
+  --horizontal-pod-autoscaler-use-rest-clients=true \
+  --horizontal-pod-autoscaler-sync-period=10s \
+  --tls-cert-file=##PROJECT_DIR##/pki/kube-controller-manager.pem \
+  --tls-private-key-file=##PROJECT_DIR##/pki/kube-controller-manager-key.pem \
+  --use-service-account-credentials=true \
+  --alsologtostderr=true \
+  --logtostderr=false \
+  --log-dir=##LOG_DIR## \
+  --v=2"
