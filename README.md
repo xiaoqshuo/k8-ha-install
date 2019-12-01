@@ -1,5 +1,11 @@
 # k8s 1.14.8 二进制离线部署
 
+- 参考
+
+````
+https://www.kubernetes.org.cn/5163.html
+```
+
 ## 1，kubernetes 介绍
 
 - Kubernetes（K8S）是Google开源的容器集群管理系统，K8S在Docker容器技术的基础之上，大大地提高了容器化部署应用简单高效。并且具备了完整的集群管理能力，涵盖项目周期的各个环节。
