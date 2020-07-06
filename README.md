@@ -49,9 +49,8 @@ mkdir -p /etc/kubernetes/template
 - 上传 k8s 相关包
 
 ````
-链接：https://pan.baidu.com/s/1rCwv6ZUGpiF6iCBDSeBVEw 
-提取码：o97i 
-复制这段内容后打开百度网盘手机App，操作更方便哦
+链接：https://pan.baidu.com/s/1lZIVuafZ8ohFtKLa1r7fSA 
+提取码：3fra
 ````
 
 - 进入 k8s 模板目录，解压相关包
