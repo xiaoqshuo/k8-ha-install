@@ -1,0 +1,5 @@
+[k8s]
+name= k8s
+baseurl=##YUM_REPO##/
+gpgcheck=0
+enabled=1
